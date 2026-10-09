@@ -1,0 +1,11 @@
+2026-10-09 22:28:21 | 登录 Baostock...
+2026-10-09 22:28:22 | login success! | 0 success
+2026-10-09 22:28:22 | [2/4] 股票池: 3 只
+2026-10-09 22:28:22 | [3/4] 计算中...
+2026-10-09 22:28:22 | ❌ 600519 异常: 'ResultData' object has no attribute 'rows'
+2026-10-09 22:28:22 | ❌ 000001 异常: 'ResultData' object has no attribute 'rows'
+2026-10-09 22:28:23 | ❌ 300750 异常: 'ResultData' object has no attribute 'rows'
+2026-10-09 22:28:23 | [4/4] 输出...
+2026-10-09 22:28:23 | snapshot.json: 0 条
+2026-10-09 22:28:23 | tech.json: 0 条
+2026-10-09 22:28:23 | logout success!

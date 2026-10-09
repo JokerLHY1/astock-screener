@@ -1,0 +1,16 @@
+# 本地数据输出（每次运行动态生成）
+data/
+*.json
+!package.json
+
+# 日志
+*.log
+logs/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 编辑器配置（可选）
+.idea/
+.vscode/
