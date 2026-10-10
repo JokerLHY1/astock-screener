@@ -1,2 +1,15 @@
-data/snapshot.json 
-data/tech.json 
+# 忽略数据目录下的原始数据，但允许 JSON 输出
+data/*.csv
+data/*.pkl
+!data/snapshot.json
+!data/tech.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 编辑器
+.vscode/
+.idea/

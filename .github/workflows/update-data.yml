@@ -1,0 +1,35 @@
+name: Update Stock Data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 10 * * 1-5'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install baostock akshare
+
+      - name: Run engine
+        run: python engine.py
+
+      - name: Commit and push results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f data/snapshot.json data/tech.json
+          git diff --staged --quiet || git commit -m "chore: update stock data $(date +'%Y-%m-%d')"
+          git push
