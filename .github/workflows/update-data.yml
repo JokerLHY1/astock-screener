@@ -1,5 +1,8 @@
 name: Update Stock Data
 
+permissions:
+  contents: write   # 授予推送到仓库的写权限
+
 on:
   workflow_dispatch:
   schedule:
