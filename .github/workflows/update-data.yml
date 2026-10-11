@@ -33,6 +33,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f data/snapshot.json data/tech.json
-          git diff --staged --quiet || git commit -m "chore: update stock data $(date +'%Y-%m-%d')"
-          git push
+
+          mkdir -p data
+          [ -f data/snapshot.json ] && git add data/snapshot.json
+          [ -f data/tech.json ] && git add data/tech.json
+
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update stock data $(date +'%Y-%m-%d')"
+            git push
+          else
+            echo "No changes to commit"
+          fi
+
