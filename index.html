@@ -14,14 +14,35 @@
     <div class="filters">
       <div class="filter-row">
         <label>行业（多选）</label>
-        <select id="industry" multiple size="5"></select>
+        <!-- Excel 风格下拉 -->
+        <div class="excel-dropdown" id="industryDropdown">
+          <div class="dropdown-header">
+            <input type="text" id="industrySearch" class="dropdown-search" placeholder="搜索行业..." readonly>
+            <span class="dropdown-arrow">▾</span>
+          </div>
+          <div class="dropdown-tags" id="industryTags"></div>
+          <div class="dropdown-panel" id="industryPanel">
+            <div class="dropdown-filter">
+              <input type="text" id="industryFilter" placeholder="输入关键词过滤...">
+              <button type="button" id="industrySelectAll">全选</button>
+              <button type="button" id="industryClear">清空</button>
+            </div>
+            <div class="dropdown-options" id="industryOptions"></div>
+            <div class="dropdown-footer">
+              <span id="industryCount">已选 0</span>
+              <button type="button" id="industryConfirm">确定</button>
+            </div>
+          </div>
+        </div>
       </div>
+
       <div class="filter-row">
         <label>股价范围</label>
         <input type="number" id="price-min" placeholder="最低" step="0.01">
         <span>~</span>
         <input type="number" id="price-max" placeholder="最高" step="0.01">
       </div>
+
       <div class="filter-row">
         <label>技术面</label>
         <label><input type="checkbox" id="f-ma"> 5/20均线多头</label>
@@ -29,6 +50,7 @@
         <label><input type="checkbox" id="f-kdj"> KDJ金叉</label>
         <label><input type="checkbox" id="f-vol"> 放量突破</label>
       </div>
+
       <div class="filter-row">
         <label>评分权重</label>
         <span>技术面</span>
@@ -36,8 +58,18 @@
         <span>基本面</span>
         <input type="number" id="w-fund" value="30" min="0" max="100" style="width:60px">%
       </div>
+
       <button id="btn-filter">筛选</button>
       <button id="btn-reset">重置</button>
+
+      <!-- 更新数据按钮 -->
+      <div class="update-block">
+        <button id="btn-update" class="btn-update">
+          <span class="btn-text">🔄 更新数据</span>
+          <span class="btn-spinner hidden"></span>
+        </button>
+        <span class="update-hint">选行业=更新该行业 · 不选=全量（可能超时）</span>
+      </div>
     </div>
 
     <div class="result-info">
