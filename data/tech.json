@@ -1,0 +1,702 @@
+{
+  "000001": {
+    "name": "000001",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000002": {
+    "name": "000002",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000006": {
+    "name": "000006",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000007": {
+    "name": "000007",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000008": {
+    "name": "000008",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000009": {
+    "name": "000009",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000010": {
+    "name": "000010",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000011": {
+    "name": "000011",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000012": {
+    "name": "000012",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000014": {
+    "name": "000014",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000016": {
+    "name": "000016",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000017": {
+    "name": "000017",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000019": {
+    "name": "000019",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000020": {
+    "name": "000020",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000021": {
+    "name": "000021",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000025": {
+    "name": "000025",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000026": {
+    "name": "000026",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000027": {
+    "name": "000027",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000028": {
+    "name": "000028",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000029": {
+    "name": "000029",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000030": {
+    "name": "000030",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000031": {
+    "name": "000031",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000032": {
+    "name": "000032",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000034": {
+    "name": "000034",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000035": {
+    "name": "000035",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000036": {
+    "name": "000036",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000037": {
+    "name": "000037",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000039": {
+    "name": "000039",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000042": {
+    "name": "000042",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000045": {
+    "name": "000045",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000048": {
+    "name": "000048",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000049": {
+    "name": "000049",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000050": {
+    "name": "000050",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000055": {
+    "name": "000055",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000056": {
+    "name": "000056",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000058": {
+    "name": "000058",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000059": {
+    "name": "000059",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000060": {
+    "name": "000060",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000061": {
+    "name": "000061",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000062": {
+    "name": "000062",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000063": {
+    "name": "000063",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000065": {
+    "name": "000065",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000066": {
+    "name": "000066",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000068": {
+    "name": "000068",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000069": {
+    "name": "000069",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000070": {
+    "name": "000070",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000078": {
+    "name": "000078",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000088": {
+    "name": "000088",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000089": {
+    "name": "000089",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000090": {
+    "name": "000090",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000096": {
+    "name": "000096",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000099": {
+    "name": "000099",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000100": {
+    "name": "000100",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000151": {
+    "name": "000151",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000153": {
+    "name": "000153",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000155": {
+    "name": "000155",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000156": {
+    "name": "000156",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000157": {
+    "name": "000157",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000158": {
+    "name": "000158",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000159": {
+    "name": "000159",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000166": {
+    "name": "000166",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000301": {
+    "name": "000301",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000333": {
+    "name": "000333",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000338": {
+    "name": "000338",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000400": {
+    "name": "000400",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000401": {
+    "name": "000401",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000402": {
+    "name": "000402",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000403": {
+    "name": "000403",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000404": {
+    "name": "000404",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000407": {
+    "name": "000407",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000408": {
+    "name": "000408",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000409": {
+    "name": "000409",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000410": {
+    "name": "000410",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000411": {
+    "name": "000411",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000415": {
+    "name": "000415",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000417": {
+    "name": "000417",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000419": {
+    "name": "000419",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000420": {
+    "name": "000420",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000421": {
+    "name": "000421",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000422": {
+    "name": "000422",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000423": {
+    "name": "000423",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000425": {
+    "name": "000425",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000426": {
+    "name": "000426",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000428": {
+    "name": "000428",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000429": {
+    "name": "000429",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000430": {
+    "name": "000430",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000488": {
+    "name": "000488",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000498": {
+    "name": "000498",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000501": {
+    "name": "000501",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000503": {
+    "name": "000503",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000504": {
+    "name": "000504",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000505": {
+    "name": "000505",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000506": {
+    "name": "000506",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000507": {
+    "name": "000507",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000509": {
+    "name": "000509",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000510": {
+    "name": "000510",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000513": {
+    "name": "000513",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000514": {
+    "name": "000514",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000516": {
+    "name": "000516",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  },
+  "000517": {
+    "name": "000517",
+    "price": 0,
+    "industry": "未分类",
+    "tech_detail": {},
+    "fund_detail": {}
+  }
+}
