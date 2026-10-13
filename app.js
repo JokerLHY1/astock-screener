@@ -1,6 +1,6 @@
 // ============ 配置 ============
 const REPO_OWNER = 'JokerLHY1';          // ← 改成你的用户名
-const REPO_NAME = 'astock-engine';       // ← 改成你的仓库名
+const REPO_NAME = 'astock-screener';       // ← 改成你的仓库名
 const WORKFLOW_ID = 'update-data.yml';   // ← workflow 文件名
 const GH_TOKEN = '';                     // ← 你的 GitHub PAT（建议让用户自己填）
 
