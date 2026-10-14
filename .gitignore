@@ -13,3 +13,4 @@ venv/
 # 编辑器
 .vscode/
 .idea/
+data/history/ 

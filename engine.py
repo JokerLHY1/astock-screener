@@ -1,24 +1,14 @@
 #!/usr/bin/env python3
 
+
+
 # -*- coding: utf-8 -*-
+
+
 
 """
 
 A股选股引擎 v7.0 - 增量缓存版 + 板块筛选 + 稳定性兜底
-
-- --sectors 参数：从底库按板块过滤，只跑筛选出的股票
-
-- 无参数：stocks.txt 为空时自动拉全市场（双数据源兜底）
-
-- K线缓存：data/history/<code>.json，只补最近缺失交易日
-
-- 基本面缓存：已算过的跳过，避免重复拉取
-
-- 失败重试：单只失败重试3次
-
-- 断点续跑：每100只存一次，中断后重跑会自动跳过已完成的
-
-- 稳定性：关键失败点 sys.exit(1)，兜底写空壳文件
 
 """
 
@@ -42,9 +32,13 @@ from datetime import datetime, timedelta
 
 
 
-# ============ 配置 ============
+# ============ 路径配置（绝对路径，防止从别处调用找不到文件） ============
 
-DATA_DIR = "data"
+
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
 HISTORY_DIR = os.path.join(DATA_DIR, "history")
 
@@ -54,7 +48,9 @@ SNAPSHOT_FILE = os.path.join(DATA_DIR, "snapshot.json")
 
 TECH_FILE = os.path.join(DATA_DIR, "tech.json")
 
-STOCKS_FILE = "stocks.txt"
+STOCKS_FILE = os.path.join(BASE_DIR, "stocks.txt")
+
+INDUSTRY_MAP_FILE = os.path.join(BASE_DIR, "industry_map.json")
 
 
 
@@ -94,9 +90,9 @@ KLINE_DAYS = 90
 
 
 
-
-
 # ============ 参数解析 ============
+
+
 
 def parse_args():
 
@@ -110,9 +106,9 @@ def parse_args():
 
 
 
-
-
 # ============ 工具函数 ============
+
+
 
 def ensure_data_dir():
 
@@ -126,6 +122,32 @@ def ensure_data_dir():
 
 
 
+def normalize_code(code):
+
+    """统一股票代码格式为 baostock 9位格式（sh.600000 / sz.000001）"""
+
+    code = str(code).strip()
+
+    if '.' in code and len(code) == 9:
+
+        return code
+
+    if len(code) == 6:
+
+        if code.startswith('6') or code.startswith('9'):
+
+            return f"sh.{code}"
+
+        elif code.startswith('0') or code.startswith('3') or code.startswith('2'):
+
+            return f"sz.{code}"
+
+        else:
+
+            return code
+
+    return code
+
 
 
 def load_stocks_from_txt():
@@ -138,9 +160,7 @@ def load_stocks_from_txt():
 
         lines = [l.strip() for l in f if l.strip()]
 
-    return lines
-
-
+    return [normalize_code(c) for c in lines]
 
 
 
@@ -152,9 +172,13 @@ def get_all_a_stocks():
 
         df = ak.stock_info_a_code_name()
 
-        codes = df['code'].tolist()
+        codes = []
 
-        print(f"  akshare 获取 {len(codes)} 只股票")
+        for c in df['code'].tolist():
+
+            codes.append(normalize_code(c))
+
+        print(f"  akshare 获取 {len(codes)} 只股票（已加前缀）")
 
         return codes
 
@@ -165,6 +189,32 @@ def get_all_a_stocks():
         return []
 
 
+
+def load_industry_map():
+
+    """加载申万行业映射，key 统一 normalize"""
+
+    try:
+
+        with open(INDUSTRY_MAP_FILE, "r", encoding="utf-8") as f:
+
+            raw = json.load(f)
+
+        mapped = {}
+
+        for k, v in raw.items():
+
+            mapped[normalize_code(k)] = v
+
+        print(f"✅ 申万行业映射加载完成，共 {len(mapped)} 只股票有行业归属")
+
+        return mapped
+
+    except Exception as e:
+
+        print(f"⚠️ 未找到 industry_map.json ({INDUSTRY_MAP_FILE}): {e}")
+
+        return {}
 
 
 
@@ -186,8 +236,6 @@ def load_fund_cache():
 
 
 
-
-
 def save_fund_cache(cache):
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -195,8 +243,6 @@ def save_fund_cache(cache):
     with open(FUND_CACHE_FILE, "w", encoding="utf-8") as f:
 
         json.dump(cache, f, ensure_ascii=False)
-
-
 
 
 
@@ -220,8 +266,6 @@ def get_cached_kline(code):
 
 
 
-
-
 def save_cached_kline(code, kline):
 
     cache_file = os.path.join(HISTORY_DIR, f"{code}.json")
@@ -229,8 +273,6 @@ def save_cached_kline(code, kline):
     with open(cache_file, "w", encoding="utf-8") as f:
 
         json.dump(kline, f, ensure_ascii=False)
-
-
 
 
 
@@ -248,9 +290,9 @@ def merge_kline(old, new):
 
 
 
-
-
 # ============ 技术面分析 ============
+
+
 
 def fetch_kline(code, count=KLINE_DAYS):
 
@@ -261,8 +303,6 @@ def fetch_kline(code, count=KLINE_DAYS):
             end_date = datetime.now().strftime("%Y-%m-%d")
 
             start_date = (datetime.now() - timedelta(days=count * 2)).strftime("%Y-%m-%d")
-
-
 
             rs = bs.query_history_k_data_plus(
 
@@ -279,8 +319,6 @@ def fetch_kline(code, count=KLINE_DAYS):
                 adjustflag="2"
 
             )
-
-
 
             data = []
 
@@ -324,8 +362,6 @@ def fetch_kline(code, count=KLINE_DAYS):
 
 
 
-
-
 def get_tech_analysis(code):
 
     result = {
@@ -338,19 +374,13 @@ def get_tech_analysis(code):
 
     }
 
-
-
     cached = get_cached_kline(code)
 
     fresh = fetch_kline(code)
 
-
-
     if not fresh and not cached:
 
         return result
-
-
 
     if fresh:
 
@@ -364,13 +394,9 @@ def get_tech_analysis(code):
 
         data = cached
 
-
-
     if len(data) < 30:
 
         return result
-
-
 
     closes = [d['close'] for d in data]
 
@@ -382,7 +408,7 @@ def get_tech_analysis(code):
 
 
 
-    # --- 1. 5/20均线多头 ---
+    # 1. 5/20均线多头
 
     if len(closes) >= 20:
 
@@ -404,7 +430,7 @@ def get_tech_analysis(code):
 
 
 
-    # --- 2. MACD ---
+    # 2. MACD
 
     if len(closes) >= 26:
 
@@ -424,7 +450,7 @@ def get_tech_analysis(code):
 
 
 
-    # --- 3. KDJ ---
+    # 3. KDJ
 
     if len(closes) >= 14:
 
@@ -446,7 +472,7 @@ def get_tech_analysis(code):
 
 
 
-    # --- 4. 放量突破 ---
+    # 4. 放量突破
 
     if len(volumes) >= 20 and len(closes) >= 20:
 
@@ -472,11 +498,7 @@ def get_tech_analysis(code):
 
     result["tech_total"] = result["ma_score"] + result["macd_score"] + result["kdj_score"] + result["vol_score"]
 
-
-
     return result
-
-
 
 
 
@@ -486,8 +508,6 @@ def calc_macd(closes, fast=12, slow=26, signal=9):
 
         return [0], [0], [0]
 
-
-
     ema_fast = []
 
     ema_slow = []
@@ -495,8 +515,6 @@ def calc_macd(closes, fast=12, slow=26, signal=9):
     ema_f = closes[0]
 
     ema_s = closes[0]
-
-
 
     for price in closes:
 
@@ -507,8 +525,6 @@ def calc_macd(closes, fast=12, slow=26, signal=9):
         ema_fast.append(ema_f)
 
         ema_slow.append(ema_s)
-
-
 
     dif = [f - s for f, s in zip(ema_fast, ema_slow)]
 
@@ -522,13 +538,9 @@ def calc_macd(closes, fast=12, slow=26, signal=9):
 
         dea.append(dea_val)
 
-
-
     macd_hist = [(d - a) * 2 for d, a in zip(dif, dea)]
 
     return dif, dea, macd_hist
-
-
 
 
 
@@ -538,15 +550,11 @@ def calc_kdj(highs, lows, closes, n=9, m1=3, m2=3):
 
         return [50], [50], [50]
 
-
-
     k_list = [50]
 
     d_list = [50]
 
     j_list = [50]
-
-
 
     for i in range(n - 1, len(closes)):
 
@@ -574,15 +582,13 @@ def calc_kdj(highs, lows, closes, n=9, m1=3, m2=3):
 
         j_list.append(j)
 
-
-
     return k_list, d_list, j_list
 
 
 
-
-
 # ============ 基本面分析 ============
+
+
 
 def get_fundamental_analysis(code, fund_cache):
 
@@ -596,8 +602,6 @@ def get_fundamental_analysis(code, fund_cache):
 
             return fund_cache[code]
 
-
-
     result = {
 
         "roe": 0, "pe": 0, "pb": 0,
@@ -609,8 +613,6 @@ def get_fundamental_analysis(code, fund_cache):
         "cache_date": today,
 
     }
-
-
 
     for attempt in range(MAX_RETRY):
 
@@ -631,8 +633,6 @@ def get_fundamental_analysis(code, fund_cache):
                 frequency="d"
 
             )
-
-
 
             if rs.error_code == '0':
 
@@ -671,8 +671,6 @@ def get_fundamental_analysis(code, fund_cache):
                         result["detail"]["pb"] = pb
 
                         break
-
-
 
             year = datetime.now().year
 
@@ -722,13 +720,9 @@ def get_fundamental_analysis(code, fund_cache):
 
                     break
 
-
-
             result["fund_total"] = result["roe_score"] + result["pe_score"] + result["pb_score"]
 
             break
-
-
 
         except Exception as e:
 
@@ -740,17 +734,15 @@ def get_fundamental_analysis(code, fund_cache):
 
                 result["detail"]["error"] = str(e)
 
-
-
     fund_cache[code] = result
 
     return result
 
 
 
-
-
 # ============ 保存函数 ============
+
+
 
 def save_snapshot(results):
 
@@ -760,39 +752,43 @@ def save_snapshot(results):
 
     for r in results:
 
+        if "code" not in r or "tech_total" not in r:
+
+            continue
+
         snapshot.append({
 
             "code": r["code"],
 
-            "name": r["name"],
+            "name": r.get("name", ""),
 
-            "price": r["price"],
+            "price": r.get("price", 0),
 
-            "industry": r["industry"],
+            "industry": r.get("industry", "未分类"),
 
-            "ma_bull": r["ma_bull"],
+            "ma_bull": r.get("ma_bull", False),
 
-            "macd_gold": r["macd_gold"],
+            "macd_gold": r.get("macd_gold", False),
 
-            "kdj_gold": r["kdj_gold"],
+            "kdj_gold": r.get("kdj_gold", False),
 
-            "vol_breakout": r["vol_breakout"],
+            "vol_breakout": r.get("vol_breakout", False),
 
             "tech_total": r["tech_total"],
 
-            "roe": r["roe"],
+            "roe": r.get("roe", 0),
 
-            "pe": r["pe"],
+            "pe": r.get("pe", 0),
 
-            "pb": r["pb"],
+            "pb": r.get("pb", 0),
 
-            "roe_score": r["roe_score"],
+            "roe_score": r.get("roe_score", 0),
 
-            "pe_score": r["pe_score"],
+            "pe_score": r.get("pe_score", 0),
 
-            "pb_score": r["pb_score"],
+            "pb_score": r.get("pb_score", 0),
 
-            "fund_total": r["fund_total"],
+            "fund_total": r.get("fund_total", 0),
 
             "total_score": round(r.get("tech_total", 0) + r.get("fund_total", 0), 2),
 
@@ -804,8 +800,6 @@ def save_snapshot(results):
 
 
 
-
-
 def save_tech_detail(results):
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -814,17 +808,21 @@ def save_tech_detail(results):
 
     for r in results:
 
+        if "code" not in r:
+
+            continue
+
         tech_data[r["code"]] = {
 
-            "name": r["name"],
+            "name": r.get("name", ""),
 
-            "price": r["price"],
+            "price": r.get("price", 0),
 
-            "industry": r["industry"],
+            "industry": r.get("industry", "未分类"),
 
-            "tech_detail": r["tech_detail"],
+            "tech_detail": r.get("tech_detail", {}),
 
-            "fund_detail": r["fund_detail"],
+            "fund_detail": r.get("fund_detail", {}),
 
         }
 
@@ -834,9 +832,9 @@ def save_tech_detail(results):
 
 
 
-
-
 # ============ 主流程 ============
+
+
 
 def main():
 
@@ -858,8 +856,6 @@ def main():
 
 
 
-    # 保底：确保输出文件始终存在
-
     ensure_data_dir()
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -880,11 +876,17 @@ def main():
 
 
 
+    # 加载申万行业映射（必须在 main 里，因为 CODE_INDUSTRY 是全局变量）
+
+    global CODE_INDUSTRY
+
+    CODE_INDUSTRY = load_industry_map()
+
+
+
     fund_cache = load_fund_cache()
 
 
-
-    # 登录 Baostock
 
     lg = bs.login()
 
@@ -904,21 +906,15 @@ def main():
 
 
 
-    # 确定股票池
-
     stocks = []
 
 
 
     if args.sectors:
 
-        # ---- 板块筛选模式：从底库过滤 ----
-
         sector_list = [s.strip() for s in args.sectors.split(',')]
 
         print(f"筛选板块: {sector_list}")
-
-
 
         filtered_codes = []
 
@@ -942,21 +938,17 @@ def main():
 
                 print(f"读取底库失败: {e}")
 
-
-
         if filtered_codes:
 
             stocks = filtered_codes
 
         else:
 
-            print("⚠️ 底库中没找到匹配股票，将全量拉取建库")
+            print("⚠️ 底库中没找到匹配股票（可能行业映射已更新），将全量拉取建库")
 
             stocks = get_all_a_stocks()
 
             if not stocks:
-
-                # fallback 到 baostock
 
                 print("akshare 失败，尝试 baostock...")
 
@@ -978,11 +970,7 @@ def main():
 
                     print(f"baostock 也失败: {e}")
 
-
-
     else:
-
-        # ---- 无 --sectors：正常模式 ----
 
         stocks = load_stocks_from_txt()
 
@@ -1036,27 +1024,7 @@ def main():
 
 
 
-    # 加载行业映射
-
-    print("\n正在加载行业映射...")
-
-    try:
-
-        with open("industry_map.json", "r", encoding="utf-8") as f:
-
-            CODE_INDUSTRY = json.load(f)
-
-        print(f"板块映射加载完成，共 {len(CODE_INDUSTRY)} 只股票有行业归属")
-
-    except Exception as e:
-
-        print(f"⚠️ 未找到 industry_map.json: {e}")
-
-        CODE_INDUSTRY = {}
-
-
-
-    # 尝试加载已有快照（断点续跑）
+    # 断点续跑：只保留完整记录
 
     existing_results = {}
 
@@ -1068,13 +1036,17 @@ def main():
 
                 for item in json.load(f):
 
-                    existing_results[item["code"]] = item
+                    if "code" in item and "tech_total" in item:
 
-            print(f"已加载已有快照 {len(existing_results)} 条（断点续跑）")
+                        existing_results[item["code"]] = item
 
-        except:
+            print(f"已加载已有快照 {len(existing_results)} 条（断点续跑，已过滤不完整记录）")
 
-            pass
+        except Exception as e:
+
+            print(f"读取快照失败，将全量重跑: {e}")
+
+            existing_results = {}
 
 
 
@@ -1094,21 +1066,15 @@ def main():
 
             continue
 
-
-
         try:
 
             if (i + 1) % 50 == 0:
 
                 print(f"  进度: {i+1}/{len(stocks)} (已完成 {success}, 失败 {fail})")
 
-
-
             tech = get_tech_analysis(code)
 
             fund = get_fundamental_analysis(code, fund_cache)
-
-
 
             stock_name = code
 
@@ -1126,8 +1092,6 @@ def main():
 
                 pass
 
-
-
             current_price = 0
 
             cached_k = get_cached_kline(code)
@@ -1136,9 +1100,7 @@ def main():
 
                 current_price = cached_k[-1]['close']
 
-
-
-            industry = CODE_INDUSTRY.get(code, "未分类")
+            industry = CODE_INDUSTRY.get(code, CODE_INDUSTRY.get(code[3:] if '.' in code else code, "未分类"))
 
 
 
@@ -1190,23 +1152,17 @@ def main():
 
             }
 
-
-
             results.append(result)
 
             done_codes.add(code)
 
             success += 1
 
-
-
             if success % 100 == 0:
 
                 save_snapshot(results)
 
                 save_fund_cache(fund_cache)
-
-
 
         except Exception as e:
 
@@ -1218,17 +1174,31 @@ def main():
 
 
 
-    # 最终保存
-
     save_snapshot(results)
 
     save_fund_cache(fund_cache)
 
     save_tech_detail(results)
 
-
-
     bs.logout()
+
+
+
+    # 行业分布统计
+
+    industry_count = {}
+
+    for r in results:
+
+        ind = r.get("industry", "未分类")
+
+        industry_count[ind] = industry_count.get(ind, 0) + 1
+
+    print("\n行业分布统计:")
+
+    for ind, cnt in sorted(industry_count.items(), key=lambda x: x[1], reverse=True)[:10]:
+
+        print(f"  {ind}: {cnt} 只")
 
 
 
@@ -1239,8 +1209,6 @@ def main():
     print(f"结果已保存: {SNAPSHOT_FILE}")
 
     print("=" * 60)
-
-
 
 
 
