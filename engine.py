@@ -8,7 +8,17 @@
 
 """
 
-A股选股引擎 v7.0 - 增量缓存版 + 板块筛选 + 稳定性兜底
+A股选股引擎 v7.1 - 增量缓存版 + 板块筛选 + 名称缓存 + 评分硬封顶100分
+
+变更记录:
+
+  - 新增 name_cache.json 持久化股票名称，避免反复请求 baostock 失败导致名称显示为代码
+
+  - 修复断点续跑时旧记录 name 字段为代码的问题
+
+  - 技术面总分硬封顶 70 分，基本面总分硬封顶 30 分，综合分硬封顶 100 分
+
+  - 修复综合分溢出（原 700/962.5 等问题）
 
 """
 
@@ -43,6 +53,8 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 HISTORY_DIR = os.path.join(DATA_DIR, "history")
 
 FUND_CACHE_FILE = os.path.join(DATA_DIR, "fund_cache.json")
+
+NAME_CACHE_FILE = os.path.join(DATA_DIR, "name_cache.json")
 
 SNAPSHOT_FILE = os.path.join(DATA_DIR, "snapshot.json")
 
@@ -87,6 +99,16 @@ PB_MAX = 10
 MAX_RETRY = 3
 
 KLINE_DAYS = 90
+
+
+
+# 评分硬封顶常量
+
+TECH_MAX = 70
+
+FUND_MAX = 30
+
+TOTAL_MAX = 100
 
 
 
@@ -241,6 +263,36 @@ def save_fund_cache(cache):
     os.makedirs(DATA_DIR, exist_ok=True)
 
     with open(FUND_CACHE_FILE, "w", encoding="utf-8") as f:
+
+        json.dump(cache, f, ensure_ascii=False)
+
+
+
+def load_name_cache():
+
+    """加载股票名称缓存"""
+
+    if os.path.exists(NAME_CACHE_FILE):
+
+        try:
+
+            with open(NAME_CACHE_FILE, "r", encoding="utf-8") as f:
+
+                return json.load(f)
+
+        except:
+
+            pass
+
+    return {}
+
+
+
+def save_name_cache(cache):
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    with open(NAME_CACHE_FILE, "w", encoding="utf-8") as f:
 
         json.dump(cache, f, ensure_ascii=False)
 
@@ -498,6 +550,10 @@ def get_tech_analysis(code):
 
     result["tech_total"] = result["ma_score"] + result["macd_score"] + result["kdj_score"] + result["vol_score"]
 
+    # 技术面总分硬封顶 70
+
+    result["tech_total"] = min(result["tech_total"], TECH_MAX)
+
     return result
 
 
@@ -722,6 +778,10 @@ def get_fundamental_analysis(code, fund_cache):
 
             result["fund_total"] = result["roe_score"] + result["pe_score"] + result["pb_score"]
 
+            # 基本面总分硬封顶 30
+
+            result["fund_total"] = min(result["fund_total"], FUND_MAX)
+
             break
 
         except Exception as e:
@@ -844,7 +904,7 @@ def main():
 
     print("=" * 60)
 
-    print("A股选股引擎 v7.0（增量缓存 + 板块筛选 + 稳定性兜底）启动")
+    print("A股选股引擎 v7.1（增量缓存 + 板块筛选 + 名称缓存 + 评分封顶）启动")
 
     print(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -876,7 +936,7 @@ def main():
 
 
 
-    # 加载申万行业映射（必须在 main 里，因为 CODE_INDUSTRY 是全局变量）
+    # 加载申万行业映射
 
     global CODE_INDUSTRY
 
@@ -885,6 +945,10 @@ def main():
 
 
     fund_cache = load_fund_cache()
+
+    name_cache = load_name_cache()
+
+    print(f"📋 名称缓存已加载: {len(name_cache)} 条")
 
 
 
@@ -899,6 +963,8 @@ def main():
         save_tech_detail([])
 
         save_fund_cache(fund_cache)
+
+        save_name_cache(name_cache)
 
         sys.exit(1)
 
@@ -944,7 +1010,7 @@ def main():
 
         else:
 
-            print("⚠️ 底库中没找到匹配股票（可能行业映射已更新），将全量拉取建库")
+            print("⚠️ 底库中没找到匹配股票，将全量拉取建库")
 
             stocks = get_all_a_stocks()
 
@@ -1016,6 +1082,8 @@ def main():
 
         save_fund_cache(fund_cache)
 
+        save_name_cache(name_cache)
+
         sys.exit(1)
 
 
@@ -1050,6 +1118,22 @@ def main():
 
 
 
+    # 修复旧记录中 name 是代码的问题
+
+    for item in existing_results.values():
+
+        if item.get("name") and item["name"].startswith(("sh.", "sz.")):
+
+            cached_name = name_cache.get(item["code"])
+
+            if cached_name and not cached_name.startswith(("sh.", "sz.")):
+
+                item["name"] = cached_name
+
+                print(f"  🔧 修复旧记录名称: {item['code']} → {cached_name}")
+
+
+
     results = list(existing_results.values())
 
     done_codes = set(existing_results.keys())
@@ -1076,21 +1160,47 @@ def main():
 
             fund = get_fundamental_analysis(code, fund_cache)
 
-            stock_name = code
 
-            try:
 
-                rs = bs.query_stock_basic(code=code)
+            # ===== 名称获取（优先缓存）=====
 
-                if rs.error_code == '0' and rs.next():
+            stock_name = name_cache.get(code)
 
-                    row = rs.get_row_data()
+            if not stock_name or stock_name == code or stock_name.startswith(("sh.", "sz.")):
 
-                    stock_name = row[1] if len(row) > 1 and row[1] else code
+                try:
 
-            except:
+                    rs = bs.query_stock_basic(code=code)
 
-                pass
+                    if rs.error_code == '0' and rs.next():
+
+                        row = rs.get_row_data()
+
+                        fetched = row[1] if len(row) > 1 and row[1] else None
+
+                        if fetched and not fetched.startswith(("sh.", "sz.")):
+
+                            stock_name = fetched
+
+                            name_cache[code] = fetched
+
+                        else:
+
+                            stock_name = code.split('.')[-1]
+
+                            name_cache[code] = stock_name
+
+                    else:
+
+                        stock_name = code.split('.')[-1]
+
+                except:
+
+                    stock_name = code.split('.')[-1]
+
+            # ===== 名称获取结束 =====
+
+
 
             current_price = 0
 
@@ -1101,6 +1211,16 @@ def main():
                 current_price = cached_k[-1]['close']
 
             industry = CODE_INDUSTRY.get(code, CODE_INDUSTRY.get(code[3:] if '.' in code else code, "未分类"))
+
+
+
+            # 评分硬封顶
+
+            tech_total = min(tech["tech_total"], TECH_MAX)
+
+            fund_total = min(fund["fund_total"], FUND_MAX)
+
+            total_score = min(tech_total + fund_total, TOTAL_MAX)
 
 
 
@@ -1130,7 +1250,7 @@ def main():
 
                 "vol_score": tech["vol_score"],
 
-                "tech_total": tech["tech_total"],
+                "tech_total": tech_total,
 
                 "roe": fund["roe"],
 
@@ -1144,7 +1264,9 @@ def main():
 
                 "pb_score": fund["pb_score"],
 
-                "fund_total": fund["fund_total"],
+                "fund_total": fund_total,
+
+                "total_score": round(total_score, 2),
 
                 "tech_detail": tech["detail"],
 
@@ -1164,6 +1286,8 @@ def main():
 
                 save_fund_cache(fund_cache)
 
+                save_name_cache(name_cache)
+
         except Exception as e:
 
             fail += 1
@@ -1177,6 +1301,8 @@ def main():
     save_snapshot(results)
 
     save_fund_cache(fund_cache)
+
+    save_name_cache(name_cache)
 
     save_tech_detail(results)
 
@@ -1205,6 +1331,8 @@ def main():
     print("\n" + "=" * 60)
 
     print(f"完成! 成功: {success}, 失败: {fail}, 总计: {len(results)}")
+
+    print(f"名称缓存: {len(name_cache)} 条")
 
     print(f"结果已保存: {SNAPSHOT_FILE}")
 

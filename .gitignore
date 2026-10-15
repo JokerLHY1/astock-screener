@@ -1,16 +1,22 @@
-# å¿½ç•¥æ•°æ®ç›®å½•ä¸‹çš„åŸå§‹æ•°æ®ï¼Œä½†å…è®¸ JSON è¾“å‡º
-data/*.csv
-data/*.pkl
-!data/snapshot.json
-!data/tech.json
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
-
-# ç¼–è¾‘å™¨
-.vscode/
-.idea/
+# Python 
+__pycache__/ 
+*.pyc 
+.venv/ 
+venv/ 
+ 
+# ±¾µØÊı¾İ»º´æ£¨²»Èë¿â£© 
+data/tech.json 
+data/fund_cache.json 
 data/history/ 
+ 
+# ÔÊĞíÉÏ´«µÄ½á¹ûÎÄ¼ş 
+# data/snapshot.json ²»ºöÂÔ 
+# data/name_cache.json ²»ºöÂÔ 
+ 
+# ±à¼­Æ÷ 
+.vscode/ 
+.idea/ 
+ 
+# ÁÙÊ±ÎÄ¼ş 
+*.log 
+.DS_Store 
