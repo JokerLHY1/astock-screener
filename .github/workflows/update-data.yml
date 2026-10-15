@@ -48,7 +48,6 @@ jobs:
           [ -f data/snapshot.json ] && git add data/snapshot.json
           [ -f data/tech.json ] && git add data/tech.json
           [ -f data/fund_cache.json ] && git add data/fund_cache.json
-          [ -d data/history ] && git add data/history/
 
           if ! git diff --staged --quiet; then
             git commit -m "chore: update stock data $(date +'%Y-%m-%d')"
