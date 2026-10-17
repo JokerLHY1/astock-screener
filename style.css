@@ -309,4 +309,90 @@ tr:hover td { background: #263548; }
   color: #64748b;
   margin-left: 4px;
 }
+/* ===== 个股搜索 ===== */
+.stock-search-wrapper {
+  position: relative;
+  display: inline-block;
+  width: 300px;
+}
+
+.stock-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.stock-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 1000;
+  display: none;
+}
+
+.stock-search-results.open {
+  display: block;
+}
+
+.stock-search-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.stock-search-item:hover {
+  background: #f0f9ff;
+}
+
+.stock-search-item input[type=checkbox] {
+  margin-right: 4px;
+}
+
+.stock-code {
+  font-weight: 600;
+  color: #1e40af;
+  min-width: 80px;
+}
+
+.stock-name {
+  flex: 1;
+  color: #374151;
+}
+
+.stock-industry {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.search-empty {
+  padding: 12px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.selected-stock-tags {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.selected-count {
+  font-size: 12px;
+  color: #6b7280;
+  margin-left: 8px;
+}
 
