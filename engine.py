@@ -1,38 +1,32 @@
 #!/usr/bin/env python3
 
-
-
 # -*- coding: utf-8 -*-
 
+"""
 
+astock-screener engine v7.4
+
+变更:
+
+  - 列表来源: baostock query_all_stock()
+
+  - 行业口径: 申万一级映射 industry_map.json
+
+  - today 回退到最近交易日（跳过周末）
+
+  - 自动补跑 failed_stocks.json（全量建库 + 每日增量双通道）
+
+  - daily_update() 每天顺带补跑5只 failed（兜底消化）
 
 """
 
-A股选股引擎 v7.1 - 增量缓存版 + 板块筛选 + 名称缓存 + 评分硬封顶100分
 
-变更记录:
-
-  - 新增 name_cache.json 持久化股票名称，避免反复请求 baostock 失败导致名称显示为代码
-
-  - 修复断点续跑时旧记录 name 字段为代码的问题
-
-  - 技术面总分硬封顶 70 分，基本面总分硬封顶 30 分，综合分硬封顶 100 分
-
-  - 修复综合分溢出（原 700/962.5 等问题）
-
-"""
-
-
-
-import baostock as bs
-
-import akshare as ak
-
-import json
 
 import os
 
 import sys
+
+import json
 
 import time
 
@@ -42,9 +36,19 @@ from datetime import datetime, timedelta
 
 
 
-# ============ 路径配置（绝对路径，防止从别处调用找不到文件） ============
+try:
+
+    import baostock as bs
+
+except ImportError:
+
+    print("请先安装 baostock: pip install baostock")
+
+    sys.exit(1)
 
 
+
+# ========= 配置 =========
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -52,101 +56,59 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 
 HISTORY_DIR = os.path.join(DATA_DIR, "history")
 
-FUND_CACHE_FILE = os.path.join(DATA_DIR, "fund_cache.json")
-
-NAME_CACHE_FILE = os.path.join(DATA_DIR, "name_cache.json")
-
 SNAPSHOT_FILE = os.path.join(DATA_DIR, "snapshot.json")
 
 TECH_FILE = os.path.join(DATA_DIR, "tech.json")
 
-STOCKS_FILE = os.path.join(BASE_DIR, "stocks.txt")
+FAILED_FILE = os.path.join(DATA_DIR, "failed_stocks.json")
+
+NAME_CACHE_FILE = os.path.join(DATA_DIR, "name_cache.json")
+
+FUND_CACHE_FILE = os.path.join(DATA_DIR, "fund_cache.json")
+
+QUERY_RESULT_FILE = os.path.join(DATA_DIR, "query_result.json")
 
 INDUSTRY_MAP_FILE = os.path.join(BASE_DIR, "industry_map.json")
 
 
 
-TECH_SCORES = {
-
-    "ma": 20,
-
-    "macd": 20,
-
-    "kdj": 15,
-
-    "vol": 15,
-
-}
-
-FUND_SCORES = {
-
-    "roe": 12,
-
-    "pe": 10,
-
-    "pb": 8,
-
-}
-
-ROE_MIN = 0.05
-
-PE_MAX = 50
-
-PB_MAX = 10
-
-
-
-MAX_RETRY = 3
-
 KLINE_DAYS = 90
 
+MAX_RETRIES = 3
 
+BATCH_PAUSE = 0.4
 
-# 评分硬封顶常量
+DEFAULT_STALE_DAYS = 7
 
-TECH_MAX = 70
-
-FUND_MAX = 30
-
-TOTAL_MAX = 100
-
-
-
-# ============ 参数解析 ============
+DAILY_RETRY_BATCH = 5
 
 
 
-def parse_args():
+TECH_SCORES = {"ma": 25, "macd": 25, "kdj": 20, "vol": 30}
 
-    parser = argparse.ArgumentParser(description='A股选股引擎')
-
-    parser.add_argument('--sectors', type=str, default='',
-
-                        help='板块名称，逗号分隔（如：电子,医药生物）')
-
-    return parser.parse_args()
+FUND_SCORES = {"pe": 30, "pb": 30, "roe": 40}
 
 
 
-# ============ 工具函数 ============
 
 
+# ========= 工具函数 =========
 
-def ensure_data_dir():
+def get_last_trade_date(_dt=None):
 
-    if not os.path.exists(DATA_DIR):
+    d = _dt or datetime.now()
 
-        os.makedirs(DATA_DIR)
+    while d.weekday() >= 5:
 
-    if not os.path.exists(HISTORY_DIR):
+        d -= timedelta(days=1)
 
-        os.makedirs(HISTORY_DIR)
+    return d.strftime("%Y-%m-%d")
+
+
 
 
 
 def normalize_code(code):
-
-    """统一股票代码格式为 baostock 9位格式（sh.600000 / sz.000001）"""
 
     code = str(code).strip()
 
@@ -156,87 +118,97 @@ def normalize_code(code):
 
     if len(code) == 6:
 
-        if code.startswith('6') or code.startswith('9'):
+        if code.startswith(('6', '9')):
 
             return f"sh.{code}"
 
-        elif code.startswith('0') or code.startswith('3') or code.startswith('2'):
+        elif code.startswith(('0', '3', '2')):
 
             return f"sz.{code}"
-
-        else:
-
-            return code
 
     return code
 
 
 
-def load_stocks_from_txt():
-
-    if not os.path.exists(STOCKS_FILE):
-
-        return []
-
-    with open(STOCKS_FILE, "r", encoding="utf-8") as f:
-
-        lines = [l.strip() for l in f if l.strip()]
-
-    return [normalize_code(c) for c in lines]
 
 
+def count_missing_days(last_date_str, today_str):
 
-def get_all_a_stocks():
+    if not last_date_str:
 
-    print("  正在拉取全市场股票列表...")
+        return -1
 
     try:
 
-        df = ak.stock_info_a_code_name()
+        last = datetime.strptime(last_date_str, "%Y-%m-%d")
 
-        codes = []
+        today = datetime.strptime(today_str, "%Y-%m-%d")
 
-        for c in df['code'].tolist():
+        return (today - last).days
 
-            codes.append(normalize_code(c))
+    except:
 
-        print(f"  akshare 获取 {len(codes)} 只股票（已加前缀）")
-
-        return codes
-
-    except Exception as e:
-
-        print(f"  akshare 拉取失败: {e}")
-
-        return []
+        return -1
 
 
 
-def load_industry_map():
 
-    """加载申万行业映射，key 统一 normalize"""
 
-    try:
+# ========= baostock =========
 
-        with open(INDUSTRY_MAP_FILE, "r", encoding="utf-8") as f:
+def bs_login():
 
-            raw = json.load(f)
+    lg = bs.login()
 
-        mapped = {}
+    if lg.error_code != '0':
 
-        for k, v in raw.items():
+        print(f"baostock 登录失败: {lg.error_msg}")
 
-            mapped[normalize_code(k)] = v
+        sys.exit(1)
 
-        print(f"✅ 申万行业映射加载完成，共 {len(mapped)} 只股票有行业归属")
 
-        return mapped
 
-    except Exception as e:
 
-        print(f"⚠️ 未找到 industry_map.json ({INDUSTRY_MAP_FILE}): {e}")
 
-        return {}
+def bs_logout():
+
+    bs.logout()
+
+
+
+
+
+# ========= 缓存 =========
+
+def load_name_cache():
+
+    if os.path.exists(NAME_CACHE_FILE):
+
+        try:
+
+            with open(NAME_CACHE_FILE, "r", encoding="utf-8") as f:
+
+                return json.load(f)
+
+        except:
+
+            pass
+
+    return {}
+
+
+
+
+
+def save_name_cache(cache):
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    with open(NAME_CACHE_FILE, "w", encoding="utf-8") as f:
+
+        json.dump(cache, f, ensure_ascii=False)
+
+
 
 
 
@@ -258,6 +230,8 @@ def load_fund_cache():
 
 
 
+
+
 def save_fund_cache(cache):
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -268,45 +242,245 @@ def save_fund_cache(cache):
 
 
 
-def load_name_cache():
 
-    """加载股票名称缓存"""
 
-    if os.path.exists(NAME_CACHE_FILE):
+# ========= failed_stocks 读写 =========
 
-        try:
+def load_failed():
 
-            with open(NAME_CACHE_FILE, "r", encoding="utf-8") as f:
+    if not os.path.exists(FAILED_FILE):
 
-                return json.load(f)
+        return {}
 
-        except:
+    try:
 
-            pass
+        with open(FAILED_FILE, "r", encoding="utf-8") as f:
+
+            raw = json.load(f)
+
+    except:
+
+        return {}
+
+    if isinstance(raw, list):
+
+        out = {}
+
+        for item in raw:
+
+            if isinstance(item, dict) and "code" in item:
+
+                out[item["code"]] = item.get("reason", "unknown")
+
+            elif isinstance(item, str):
+
+                out[item] = "unknown"
+
+        return out
+
+    elif isinstance(raw, dict):
+
+        return raw
 
     return {}
 
 
 
-def save_name_cache(cache):
-
-    os.makedirs(DATA_DIR, exist_ok=True)
-
-    with open(NAME_CACHE_FILE, "w", encoding="utf-8") as f:
-
-        json.dump(cache, f, ensure_ascii=False)
 
 
+def save_failed(failed_dict):
 
-def get_cached_kline(code):
+    remaining = []
 
-    cache_file = os.path.join(HISTORY_DIR, f"{code}.json")
+    for c, r in failed_dict.items():
 
-    if os.path.exists(cache_file):
+        if isinstance(r, str):
+
+            remaining.append({"code": c, "reason": r})
+
+        elif isinstance(r, dict):
+
+            d = {"code": c}
+
+            d.update(r)
+
+            remaining.append(d)
+
+        else:
+
+            remaining.append({"code": c, "reason": "unknown"})
+
+    with open(FAILED_FILE, "w", encoding="utf-8") as f:
+
+        json.dump(remaining, f, ensure_ascii=False, indent=2)
+
+
+
+
+
+# ========= 失败票补跑核心 =========
+
+def retry_failed_batch(failed_dict, batch=None, name_cache=None, fund_cache=None, today=None):
+
+    if not failed_dict:
+
+        return [], {}
+
+
+
+    if name_cache is None:
+
+        name_cache = load_name_cache()
+
+    if fund_cache is None:
+
+        fund_cache = load_fund_cache()
+
+    if today is None:
+
+        today = get_last_trade_date()
+
+
+
+    items = list(failed_dict.items())
+
+    if batch is not None:
+
+        items = items[:batch]
+
+
+
+    success_records = []
+
+    still_failed = dict(failed_dict)
+
+
+
+    for code, reason in items:
+
+        print(f"  补跑 {code} ({reason})...", end="")
 
         try:
 
-            with open(cache_file, "r", encoding="utf-8") as f:
+            record = build_stock_record(code, name_cache, fund_cache, today)
+
+            if record and record.get("price", 0) > 0:
+
+                success_records.append(record)
+
+                del still_failed[code]
+
+                print(f" ✅ (价格 {record['price']})")
+
+            else:
+
+                print(f" ❌ 仍无数据")
+
+        except Exception as e:
+
+            print(f" ❌ 异常: {e}")
+
+        time.sleep(BATCH_PAUSE)
+
+
+
+    return success_records, still_failed
+
+
+
+
+
+# ========= 行业映射 =========
+
+_industry_map = {}
+
+
+
+
+
+def load_industry_map():
+
+    global _industry_map
+
+    _industry_map = {}
+
+    if not os.path.exists(INDUSTRY_MAP_FILE):
+
+        print(f"⚠️ {INDUSTRY_MAP_FILE} 不存在，建库时行业将用 baostock 兜底")
+
+        return
+
+    try:
+
+        with open(INDUSTRY_MAP_FILE, "r", encoding="utf-8") as f:
+
+            raw = json.load(f)
+
+        for k, v in raw.items():
+
+            nk = normalize_code(k)
+
+            _industry_map[nk] = v
+
+            if '.' in nk:
+
+                _industry_map[nk.split('.')[-1]] = v
+
+        print(f"✅ 申万一级行业映射加载: {len(raw)} 条")
+
+    except Exception as e:
+
+        print(f"⚠️ 行业映射加载失败: {e}")
+
+
+
+
+
+def get_industry(code):
+
+    if code in _industry_map:
+
+        return _industry_map[code]
+
+    pure = code.split('.')[-1] if '.' in code else code
+
+    if pure in _industry_map:
+
+        return _industry_map[pure]
+
+    try:
+
+        rs = bs.query_stock_industry(code)
+
+        if rs.error_code == '0' and rs.next():
+
+            row = rs.get_row_data()
+
+            if row and len(row) > 1 and row[1]:
+
+                return row[1]
+
+    except:
+
+        pass
+
+    return "未分类"
+
+
+
+
+
+# ========= K线 =========
+
+def get_cached_kline(code):
+
+    filepath = os.path.join(HISTORY_DIR, f"{code}.json")
+
+    if os.path.exists(filepath):
+
+        try:
+
+            with open(filepath, "r", encoding="utf-8") as f:
 
                 return json.load(f)
 
@@ -318,13 +492,39 @@ def get_cached_kline(code):
 
 
 
-def save_cached_kline(code, kline):
 
-    cache_file = os.path.join(HISTORY_DIR, f"{code}.json")
 
-    with open(cache_file, "w", encoding="utf-8") as f:
+def save_cached_kline(code, data):
 
-        json.dump(kline, f, ensure_ascii=False)
+    os.makedirs(HISTORY_DIR, exist_ok=True)
+
+    filepath = os.path.join(HISTORY_DIR, f"{code}.json")
+
+    with open(filepath, "w", encoding="utf-8") as f:
+
+        json.dump(data, f, ensure_ascii=False)
+
+
+
+
+
+def is_kline_cache_fresh(kline, max_days=5):
+
+    if not kline or len(kline) == 0:
+
+        return False
+
+    try:
+
+        last_date = datetime.strptime(kline[-1].get("date", ""), "%Y-%m-%d")
+
+        return (datetime.now() - last_date).days <= max_days
+
+    except:
+
+        return False
+
+
 
 
 
@@ -336,93 +536,249 @@ def merge_kline(old, new):
 
         merged[d['date']] = d
 
-    result = sorted(merged.values(), key=lambda x: x['date'])
-
-    return result
+    return sorted(merged.values(), key=lambda x: x['date'])
 
 
 
-# ============ 技术面分析 ============
 
 
+def fetch_kline(code):
 
-def fetch_kline(code, count=KLINE_DAYS):
+    try:
 
-    for attempt in range(MAX_RETRY):
+        end_date = get_last_trade_date()
 
-        try:
+        start_date = (datetime.now() - timedelta(days=KLINE_DAYS * 2)).strftime("%Y-%m-%d")
 
-            end_date = datetime.now().strftime("%Y-%m-%d")
+        rs = bs.query_history_k_data_plus(
 
-            start_date = (datetime.now() - timedelta(days=count * 2)).strftime("%Y-%m-%d")
+            code,
 
-            rs = bs.query_history_k_data_plus(
+            "date,open,high,low,close,volume,amount,turn,pctChg",
 
-                code,
+            start_date=start_date, end_date=end_date,
 
-                "date,open,high,low,close,volume,amount,turn",
+            frequency="d", adjustflag="2"
 
-                start_date=start_date,
+        )
 
-                end_date=end_date,
+        data = []
 
-                frequency="d",
+        while rs.error_code == '0' and rs.next():
 
-                adjustflag="2"
+            row = rs.get_row_data()
 
-            )
-
-            data = []
-
-            while (rs.error_code == '0') and rs.next():
-
-                row = rs.get_row_data()
+            if row[0]:
 
                 data.append({
 
-                    'date': row[0],
+                    "date": row[0],
 
-                    'open': float(row[1]) if row[1] else 0,
+                    "open": float(row[1]) if row[1] else 0,
 
-                    'high': float(row[2]) if row[2] else 0,
+                    "high": float(row[2]) if row[2] else 0,
 
-                    'low': float(row[3]) if row[3] else 0,
+                    "low": float(row[3]) if row[3] else 0,
 
-                    'close': float(row[4]) if row[4] else 0,
+                    "close": float(row[4]) if row[4] else 0,
 
-                    'volume': float(row[5]) if row[5] else 0,
+                    "volume": float(row[5]) if row[5] else 0,
 
-                    'amount': float(row[6]) if row[6] else 0,
+                    "amount": float(row[6]) if row[6] else 0,
 
-                    'turn': float(row[7]) if row[7] else 0,
+                    "turn": float(row[7]) if row[7] else 0,
+
+                    "pctChg": float(row[8]) if row[8] else 0,
 
                 })
 
-            return data
+        return data if data else None
 
-        except Exception as e:
+    except:
 
-            if attempt < MAX_RETRY - 1:
-
-                time.sleep(2)
-
-            else:
-
-                return []
-
-    return []
+        return None
 
 
 
-def get_tech_analysis(code):
+
+
+def fetch_kline_incremental(code, start_date, end_date):
+
+    try:
+
+        rs = bs.query_history_k_data_plus(
+
+            code,
+
+            "date,open,high,low,close,volume,amount,turn,pctChg",
+
+            start_date=start_date, end_date=end_date,
+
+            frequency="d", adjustflag="2"
+
+        )
+
+        data = []
+
+        while rs.error_code == '0' and rs.next():
+
+            row = rs.get_row_data()
+
+            if row[0]:
+
+                data.append({
+
+                    "date": row[0],
+
+                    "open": float(row[1]) if row[1] else 0,
+
+                    "high": float(row[2]) if row[2] else 0,
+
+                    "low": float(row[3]) if row[3] else 0,
+
+                    "close": float(row[4]) if row[4] else 0,
+
+                    "volume": float(row[5]) if row[5] else 0,
+
+                    "amount": float(row[6]) if row[6] else 0,
+
+                    "turn": float(row[7]) if row[7] else 0,
+
+                    "pctChg": float(row[8]) if row[8] else 0,
+
+                })
+
+        return data if data else None
+
+    except:
+
+        return None
+
+
+
+
+
+# ========= 名称 =========
+
+def get_stock_name(code, name_cache):
+
+    if code in name_cache:
+
+        cached = name_cache[code]
+
+        if cached and not cached.startswith(("sh.", "sz.")) and not cached.isdigit():
+
+            return cached
+
+    for attempt in range(MAX_RETRIES):
+
+        try:
+
+            rs = bs.query_stock_basic(code=code)
+
+            if rs.error_code == '0' and rs.next():
+
+                row = rs.get_row_data()
+
+                name = row[1] if row and len(row) > 1 else None
+
+                if name and not name.startswith(("sh.", "sz.")) and not name.isdigit():
+
+                    name_cache[code] = name
+
+                    return name
+
+        except:
+
+            pass
+
+        if attempt < MAX_RETRIES - 1:
+
+            time.sleep(0.5)
+
+    fallback = code.split('.')[-1]
+
+    name_cache[code] = fallback
+
+    return fallback
+
+
+
+
+
+# ========= 技术面 =========
+
+def calc_macd(closes, fast=12, slow=26, signal=9):
+
+    if len(closes) < slow:
+
+        return [0], [0]
+
+    ema_f, ema_s = closes[0], closes[0]
+
+    dif = []
+
+    for price in closes:
+
+        ema_f = ema_f * (fast - 1) / (fast + 1) + price * 2 / (fast + 1)
+
+        ema_s = ema_s * (slow - 1) / (slow + 1) + price * 2 / (slow + 1)
+
+        dif.append(ema_f - ema_s)
+
+    dea, dea_val = [], dif[0]
+
+    for d in dif:
+
+        dea_val = dea_val * (signal - 1) / (signal + 1) + d * 2 / (signal + 1)
+
+        dea.append(dea_val)
+
+    return dif, dea
+
+
+
+
+
+def calc_kdj(highs, lows, closes, n=9):
+
+    if len(closes) < n:
+
+        return [50], [50]
+
+    k_list, d_list = [50], [50]
+
+    for i in range(n - 1, len(closes)):
+
+        ph = max(highs[i - n + 1:i + 1])
+
+        pl = min(lows[i - n + 1:i + 1])
+
+        rsv = (closes[i] - pl) / (ph - pl) * 100 if ph != pl else 50
+
+        k = k_list[-1] * 2 / 3 + rsv * 1 / 3
+
+        d = d_list[-1] * 2 / 3 + k * 1 / 3
+
+        k_list.append(k)
+
+        d_list.append(d)
+
+    return k_list, d_list
+
+
+
+
+
+def calc_tech_analysis(code):
 
     result = {
 
-        "ma_bull": False, "macd_gold": False, "kdj_gold": False,
+        "ma_bull": False, "macd_gold": False, "kdj_gold": False, "vol_breakout": False,
 
-        "vol_breakout": False, "ma_score": 0, "macd_score": 0,
+        "ma_score": 0, "macd_score": 0, "kdj_score": 0, "vol_score": 0,
 
-        "kdj_score": 0, "vol_score": 0, "tech_total": 0, "detail": {}
+        "tech_total": 0, "tech_detail": {}
 
     }
 
@@ -436,7 +792,7 @@ def get_tech_analysis(code):
 
     if fresh:
 
-        data = merge_kline(cached, fresh)
+        data = merge_kline(cached, fresh) if cached else fresh
 
         data = data[-KLINE_DAYS:]
 
@@ -446,9 +802,11 @@ def get_tech_analysis(code):
 
         data = cached
 
-    if len(data) < 30:
+    if len(data) < 20:
 
         return result
+
+
 
     closes = [d['close'] for d in data]
 
@@ -460,291 +818,163 @@ def get_tech_analysis(code):
 
 
 
-    # 1. 5/20均线多头
-
     if len(closes) >= 20:
 
         ma5 = sum(closes[-5:]) / 5
+
+        ma10 = sum(closes[-10:]) / 10
 
         ma20 = sum(closes[-20:]) / 20
 
         ma5_prev = sum(closes[-10:-5]) / 5 if len(closes) >= 10 else ma5
 
-        ma_bull = (ma5 > ma20) and (ma5 > ma5_prev)
+        ma_bull = (ma5 > ma10 > ma20) and (ma5 > ma5_prev)
 
         result["ma_bull"] = ma_bull
 
-        result["ma_score"] = TECH_SCORES["ma"] if ma_bull else 0
+        result["ma_score"] = TECH_SCORES["ma"] if ma_bull else (10 if ma5 > ma10 else 0)
 
-        result["detail"]["ma5"] = round(ma5, 2)
+        result["tech_detail"]["ma5"] = round(ma5, 2)
 
-        result["detail"]["ma20"] = round(ma20, 2)
+        result["tech_detail"]["ma10"] = round(ma10, 2)
+
+        result["tech_detail"]["ma20"] = round(ma20, 2)
 
 
-
-    # 2. MACD
 
     if len(closes) >= 26:
 
-        dif, dea, macd_hist = calc_macd(closes)
+        dif, dea = calc_macd(closes)
 
-        if len(dif) >= 2 and len(dea) >= 2:
+        if len(dif) >= 2:
 
-            macd_gold = (dif[-1] > dea[-1]) and (dif[-2] <= dea[-2])
+            dif_v, dea_v = dif[-1], dea[-1]
+
+            dif_p, dea_p = dif[-2], dea[-2]
+
+            macd_gold = (dif_v > dea_v) and (dif_p <= dea_p)
 
             result["macd_gold"] = macd_gold
 
-            result["macd_score"] = TECH_SCORES["macd"] if macd_gold else 0
+            result["macd_score"] = TECH_SCORES["macd"] if macd_gold else (10 if dif_v > dea_v else 0)
 
-            result["detail"]["dif"] = round(dif[-1], 4)
+            result["tech_detail"]["dif"] = round(dif_v, 4)
 
-            result["detail"]["dea"] = round(dea[-1], 4)
+            result["tech_detail"]["dea"] = round(dea_v, 4)
+
+            result["tech_detail"]["macd_hist"] = round((dif_v - dea_v) * 2, 4)
 
 
 
-    # 3. KDJ
+    if len(closes) >= 9:
 
-    if len(closes) >= 14:
+        k_vals, d_vals = calc_kdj(highs, lows, closes)
 
-        k, d, j = calc_kdj(highs, lows, closes)
+        if len(k_vals) >= 2:
 
-        if len(k) >= 2 and len(d) >= 2:
+            k_v, d_v = k_vals[-1], d_vals[-1]
 
-            kdj_gold = (k[-1] > d[-1]) and (k[-2] <= d[-2]) and (k[-1] < 80)
+            k_p, d_p = k_vals[-2], d_vals[-2]
+
+            kdj_gold = (k_v > d_v) and (k_p <= d_p)
 
             result["kdj_gold"] = kdj_gold
 
-            result["kdj_score"] = TECH_SCORES["kdj"] if kdj_gold else 0
+            result["kdj_score"] = TECH_SCORES["kdj"] if kdj_gold else (8 if k_v > d_v else 0)
 
-            result["detail"]["k"] = round(k[-1], 2)
+            result["tech_detail"]["k"] = round(k_v, 2)
 
-            result["detail"]["d"] = round(d[-1], 2)
+            result["tech_detail"]["d"] = round(d_v, 2)
 
-            result["detail"]["j"] = round(j[-1], 2)
+            result["tech_detail"]["j"] = round(3 * k_v - 2 * d_v, 2)
 
 
 
-    # 4. 放量突破
+    if len(volumes) >= 5:
 
-    if len(volumes) >= 20 and len(closes) >= 20:
+        vol_ma5 = sum(volumes[-5:]) / 5
 
-        avg_vol_20 = sum(volumes[-20:]) / 20
-
-        recent_vol = volumes[-1]
-
-        recent_close = closes[-1]
-
-        recent_high = max(highs[-20:])
-
-        vol_breakout = (recent_vol > avg_vol_20 * 1.5) and (recent_close >= recent_high * 0.98)
+        vol_breakout = volumes[-1] > vol_ma5 * 1.5
 
         result["vol_breakout"] = vol_breakout
 
-        result["vol_score"] = TECH_SCORES["vol"] if vol_breakout else 0
+        result["vol_score"] = TECH_SCORES["vol"] if vol_breakout else (10 if volumes[-1] > vol_ma5 else 0)
 
-        result["detail"]["volume_ratio"] = round(recent_vol / avg_vol_20, 2) if avg_vol_20 > 0 else 0
+        result["tech_detail"]["vol_ma5"] = round(vol_ma5, 0)
 
-        result["detail"]["recent_high"] = round(recent_high, 2)
+        result["tech_detail"]["vol_latest"] = round(volumes[-1], 0)
 
 
 
     result["tech_total"] = result["ma_score"] + result["macd_score"] + result["kdj_score"] + result["vol_score"]
 
-    # 技术面总分硬封顶 70
-
-    result["tech_total"] = min(result["tech_total"], TECH_MAX)
-
     return result
 
 
 
-def calc_macd(closes, fast=12, slow=26, signal=9):
-
-    if len(closes) < slow + signal:
-
-        return [0], [0], [0]
-
-    ema_fast = []
-
-    ema_slow = []
-
-    ema_f = closes[0]
-
-    ema_s = closes[0]
-
-    for price in closes:
-
-        ema_f = ema_f * (fast - 1) / (fast + 1) + price * 2 / (fast + 1)
-
-        ema_s = ema_s * (slow - 1) / (slow + 1) + price * 2 / (slow + 1)
-
-        ema_fast.append(ema_f)
-
-        ema_slow.append(ema_s)
-
-    dif = [f - s for f, s in zip(ema_fast, ema_slow)]
-
-    dea = []
-
-    dea_val = dif[0]
-
-    for d in dif:
-
-        dea_val = dea_val * (signal - 1) / (signal + 1) + d * 2 / (signal + 1)
-
-        dea.append(dea_val)
-
-    macd_hist = [(d - a) * 2 for d, a in zip(dif, dea)]
-
-    return dif, dea, macd_hist
 
 
+# ========= 基本面 =========
 
-def calc_kdj(highs, lows, closes, n=9, m1=3, m2=3):
-
-    if len(closes) < n:
-
-        return [50], [50], [50]
-
-    k_list = [50]
-
-    d_list = [50]
-
-    j_list = [50]
-
-    for i in range(n - 1, len(closes)):
-
-        period_high = max(highs[i - n + 1:i + 1])
-
-        period_low = min(lows[i - n + 1:i + 1])
-
-        if period_high == period_low:
-
-            rsv = 50
-
-        else:
-
-            rsv = (closes[i] - period_low) / (period_high - period_low) * 100
-
-        k = k_list[-1] * (m1 - 1) / (m1 + 1) + rsv * 2 / (m1 + 1)
-
-        d = d_list[-1] * (m2 - 1) / (m2 + 1) + k * 2 / (m2 + 1)
-
-        j = 3 * k - 2 * d
-
-        k_list.append(k)
-
-        d_list.append(d)
-
-        j_list.append(j)
-
-    return k_list, d_list, j_list
-
-
-
-# ============ 基本面分析 ============
-
-
-
-def get_fundamental_analysis(code, fund_cache):
-
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    if code in fund_cache:
-
-        cached_date = fund_cache[code].get("cache_date", "")
-
-        if cached_date == today:
-
-            return fund_cache[code]
+def calc_fund_analysis(code, today):
 
     result = {
 
-        "roe": 0, "pe": 0, "pb": 0,
+        "pe": None, "pb": None, "roe": None,
 
-        "roe_score": 0, "pe_score": 0, "pb_score": 0,
+        "pe_score": 0, "pb_score": 0, "roe_score": 0,
 
-        "fund_total": 0, "detail": {},
-
-        "cache_date": today,
+        "fund_total": 0, "fund_detail": {}
 
     }
 
-    for attempt in range(MAX_RETRY):
+    try:
 
-        try:
+        rs = bs.query_stock_basic(code=code)
 
-            end_dt = datetime.now()
+        if rs.error_code == '0' and rs.next():
 
-            start_dt = end_dt - timedelta(days=10)
+            row = rs.get_row_data()
 
-            rs = bs.query_history_k_data_plus(
+            if row and len(row) > 3:
 
-                code, "date,peTTM,pbMRQ",
+                result["fund_detail"]["ipoDate"] = row[2] if len(row) > 2 else ""
 
-                start_date=start_dt.strftime("%Y-%m-%d"),
+                result["fund_detail"]["outDate"] = row[3] if len(row) > 3 else ""
 
-                end_date=end_dt.strftime("%Y-%m-%d"),
 
-                frequency="d"
 
-            )
+        end_date = today
 
-            if rs.error_code == '0':
+        start_date = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=365)).strftime("%Y-%m-%d")
 
-                while rs.next():
+        rs = bs.query_profit_data(code=code, year=datetime.strptime(today, "%Y-%m-%d").year, quarter=4)
 
-                    row = rs.get_row_data()
+        roe_val = None
 
-                    pe = float(row[1]) if row[1] else 0
+        if rs.error_code == '0':
 
-                    pb = float(row[2]) if row[2] else 0
+            while rs.next():
 
-                    if pe > 0 or pb > 0:
+                row = rs.get_row_data()
 
-                        result["pe"] = pe
+                if row and len(row) > 3:
 
-                        result["pb"] = pb
+                    try:
 
-                        if 0 < pe < PE_MAX:
-
-                            result["pe_score"] = FUND_SCORES["pe"] * (1 - pe / PE_MAX)
-
-                        else:
-
-                            result["pe_score"] = 0
-
-                        if 0 < pb < PB_MAX:
-
-                            result["pb_score"] = FUND_SCORES["pb"] * (1 - pb / PB_MAX)
-
-                        else:
-
-                            result["pb_score"] = 0
-
-                        result["detail"]["pe"] = pe
-
-                        result["detail"]["pb"] = pb
+                        roe_val = float(row[3])
 
                         break
 
-            year = datetime.now().year
+                    except:
 
-            quarter = (datetime.now().month - 1) // 3 + 1
+                        pass
 
-            for offset in range(4):
+        if roe_val is None:
 
-                q = quarter - offset
+            for q in [3, 2, 1]:
 
-                y = year
-
-                while q <= 0:
-
-                    q += 4
-
-                    y -= 1
-
-                rs = bs.query_profit_data(code=code, year=y, quarter=q)
+                rs = bs.query_profit_data(code=code, year=datetime.strptime(today, "%Y-%m-%d").year, quarter=q)
 
                 if rs.error_code == '0':
 
@@ -752,349 +982,443 @@ def get_fundamental_analysis(code, fund_cache):
 
                         row = rs.get_row_data()
 
-                        try:
+                        if row and len(row) > 3:
 
-                            roe = float(row[3]) if row[3] else 0
+                            try:
 
-                        except (ValueError, TypeError, IndexError):
+                                roe_val = float(row[3])
 
-                            roe = 0
+                                break
 
-                        result["roe"] = roe
+                            except:
 
-                        if roe > ROE_MIN:
+                                pass
 
-                            result["roe_score"] = FUND_SCORES["roe"] * min(roe / 0.25, 1)
-
-                        result["detail"]["roe"] = roe
-
-                        result["detail"]["roe_year"] = f"{y}Q{q}"
-
-                        break
-
-                if result["roe"] > 0:
+                if roe_val is not None:
 
                     break
 
-            result["fund_total"] = result["roe_score"] + result["pe_score"] + result["pb_score"]
+        if roe_val is None:
 
-            # 基本面总分硬封顶 30
+            rs = bs.query_profit_data(code=code, year=datetime.strptime(today, "%Y-%m-%d").year - 1, quarter=4)
 
-            result["fund_total"] = min(result["fund_total"], FUND_MAX)
+            if rs.error_code == '0':
 
-            break
+                while rs.next():
 
-        except Exception as e:
+                    row = rs.get_row_data()
 
-            if attempt < MAX_RETRY - 1:
+                    if row and len(row) > 3:
 
-                time.sleep(2)
+                        try:
+
+                            roe_val = float(row[3])
+
+                            break
+
+                        except:
+
+                            pass
+
+
+
+        rs = bs.query_valuation(code=code, start_date=end_date, end_date=end_date)
+
+        pe_val, pb_val = None, None
+
+        if rs.error_code == '0' and rs.next():
+
+            row = rs.get_row_data()
+
+            if row:
+
+                for i, col in enumerate(rs.fields):
+
+                    if col == 'peTTM' and row[i]:
+
+                        try:
+
+                            pe_val = float(row[i])
+
+                        except:
+
+                            pass
+
+                    elif col == 'pbMRQ' and row[i]:
+
+                        try:
+
+                            pb_val = float(row[i])
+
+                        except:
+
+                            pass
+
+
+
+        result["roe"] = roe_val
+
+        result["pe"] = pe_val
+
+        result["pb"] = pb_val
+
+        result["fund_detail"]["pe"] = pe_val
+
+        result["fund_detail"]["pb"] = pb_val
+
+        result["fund_detail"]["roe"] = roe_val
+
+
+
+        if pe_val is not None:
+
+            if pe_val < 0:
+
+                result["pe_score"] = 0
+
+            elif pe_val < 15:
+
+                result["pe_score"] = FUND_SCORES["pe"]
+
+            elif pe_val < 30:
+
+                result["pe_score"] = int(FUND_SCORES["pe"] * 0.6)
+
+            elif pe_val < 50:
+
+                result["pe_score"] = int(FUND_SCORES["pe"] * 0.3)
 
             else:
 
-                result["detail"]["error"] = str(e)
+                result["pe_score"] = 0
 
-    fund_cache[code] = result
+
+
+        if pb_val is not None:
+
+            if pb_val < 0:
+
+                result["pb_score"] = 0
+
+            elif pb_val < 1:
+
+                result["pb_score"] = FUND_SCORES["pb"]
+
+            elif pb_val < 3:
+
+                result["pb_score"] = int(FUND_SCORES["pb"] * 0.6)
+
+            elif pb_val < 5:
+
+                result["pb_score"] = int(FUND_SCORES["pb"] * 0.3)
+
+            else:
+
+                result["pb_score"] = 0
+
+
+
+        if roe_val is not None:
+
+            if roe_val > 20:
+
+                result["roe_score"] = FUND_SCORES["roe"]
+
+            elif roe_val > 15:
+
+                result["roe_score"] = int(FUND_SCORES["roe"] * 0.8)
+
+            elif roe_val > 10:
+
+                result["roe_score"] = int(FUND_SCORES["roe"] * 0.5)
+
+            elif roe_val > 5:
+
+                result["roe_score"] = int(FUND_SCORES["roe"] * 0.2)
+
+            else:
+
+                result["roe_score"] = 0
+
+
+
+        result["fund_total"] = result["pe_score"] + result["pb_score"] + result["roe_score"]
+
+    except Exception as e:
+
+        result["fund_detail"]["error"] = str(e)
+
+
 
     return result
 
 
 
-# ============ 保存函数 ============
 
 
+# ========= 构建单只股票记录 =========
 
-def save_snapshot(results):
+def build_stock_record(code, name_cache, fund_cache, today):
 
-    os.makedirs(DATA_DIR, exist_ok=True)
+    name = get_stock_name(code, name_cache)
 
-    snapshot = []
+    if not name or name.startswith("sh.") or name.startswith("sz.") or name.isdigit():
 
-    for r in results:
+        return None
 
-        if "code" not in r or "tech_total" not in r:
 
-            continue
 
-        snapshot.append({
+    tech = calc_tech_analysis(code)
 
-            "code": r["code"],
+    fund = calc_fund_analysis(code, today)
 
-            "name": r.get("name", ""),
 
-            "price": r.get("price", 0),
 
-            "industry": r.get("industry", "未分类"),
+    # 获取最新价格
 
-            "ma_bull": r.get("ma_bull", False),
+    price = 0
 
-            "macd_gold": r.get("macd_gold", False),
+    kline_data = get_cached_kline(code)
 
-            "kdj_gold": r.get("kdj_gold", False),
+    if kline_data and len(kline_data) > 0:
 
-            "vol_breakout": r.get("vol_breakout", False),
+        price = kline_data[-1].get("close", 0)
 
-            "tech_total": r["tech_total"],
 
-            "roe": r.get("roe", 0),
 
-            "pe": r.get("pe", 0),
+    # 如果 kline 没拿到，尝试从 valuation 拿
 
-            "pb": r.get("pb", 0),
+    if price == 0:
 
-            "roe_score": r.get("roe_score", 0),
+        try:
 
-            "pe_score": r.get("pe_score", 0),
+            rs = bs.query_valuation(code=code, start_date=today, end_date=today)
 
-            "pb_score": r.get("pb_score", 0),
+            if rs.error_code == '0' and rs.next():
 
-            "fund_total": r.get("fund_total", 0),
+                row = rs.get_row_data()
 
-            "total_score": round(r.get("tech_total", 0) + r.get("fund_total", 0), 2),
+                if row and len(row) > 0:
 
-        })
+                    for i, col in enumerate(rs.fields):
 
-    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+                        if col == 'closePrice' and row[i]:
 
-        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+                            try:
 
+                                price = float(row[i])
 
+                            except:
 
-def save_tech_detail(results):
+                                pass
 
-    os.makedirs(DATA_DIR, exist_ok=True)
+        except:
 
-    tech_data = {}
+            pass
 
-    for r in results:
 
-        if "code" not in r:
 
-            continue
+    # 行业
 
-        tech_data[r["code"]] = {
+    industry = get_industry(code)
 
-            "name": r.get("name", ""),
 
-            "price": r.get("price", 0),
 
-            "industry": r.get("industry", "未分类"),
+    record = {
 
-            "tech_detail": r.get("tech_detail", {}),
+        "code": code,
 
-            "fund_detail": r.get("fund_detail", {}),
+        "name": name,
 
-        }
+        "industry": industry,
 
-    with open(TECH_FILE, "w", encoding="utf-8") as f:
+        "price": price,
 
-        json.dump(tech_data, f, ensure_ascii=False, indent=2)
+        "ma_bull": tech["ma_bull"],
 
+        "macd_gold": tech["macd_gold"],
 
+        "kdj_gold": tech["kdj_gold"],
 
-# ============ 主流程 ============
+        "vol_breakout": tech["vol_breakout"],
 
+        "tech_score": tech["tech_total"],
 
+        "fund_score": fund["fund_total"],
 
-def main():
+        "composite": tech["tech_total"] + fund["fund_total"],
 
-    args = parse_args()
+        "last_date": today,
 
+        "missing_days": 0,
 
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
 
-    print("=" * 60)
+        "tech_detail": tech["tech_detail"],
 
-    print("A股选股引擎 v7.1（增量缓存 + 板块筛选 + 名称缓存 + 评分封顶）启动")
+        "fund_detail": fund["fund_detail"],
 
-    print(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    }
 
-    if args.sectors:
+    return record
 
-        print(f"筛选板块: {args.sectors}")
 
-    print("=" * 60)
 
 
 
-    ensure_data_dir()
+# ========= 全量建库 =========
 
-    os.makedirs(DATA_DIR, exist_ok=True)
+def main_full_build():
 
+    bs_login()
 
+    load_industry_map()
 
-    if not os.path.exists(SNAPSHOT_FILE):
 
-        with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
 
-            json.dump([], f)
+    today = get_last_trade_date()
 
-    if not os.path.exists(TECH_FILE):
+    print(f"📅 交易日基准: {today}")
 
-        with open(TECH_FILE, "w", encoding="utf-8") as f:
 
-            json.dump({}, f)
 
+    # ===== 自动补跑 failed_stocks.json =====
 
+    failed = load_failed()
 
-    # 加载申万行业映射
+    if failed:
 
-    global CODE_INDUSTRY
+        print(f"🔄 检测到 {len(failed)} 只历史失败票，开始补跑...")
 
-    CODE_INDUSTRY = load_industry_map()
+        success_records, still_failed = retry_failed_batch(
 
+            failed, batch=None, today=today
 
+        )
 
-    fund_cache = load_fund_cache()
+        if success_records:
 
-    name_cache = load_name_cache()
+            # 读已有 snapshot
 
-    print(f"📋 名称缓存已加载: {len(name_cache)} 条")
+            results = []
 
+            done_codes = set()
 
+            if os.path.exists(SNAPSHOT_FILE):
 
-    lg = bs.login()
+                try:
 
-    if lg.error_code != '0':
+                    with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
 
-        print(f"Baostock 登录失败: {lg.error_msg}")
+                        results = json.load(f)
 
-        save_snapshot([])
+                    for item in results:
 
-        save_tech_detail([])
+                        done_codes.add(item.get("code"))
 
-        save_fund_cache(fund_cache)
+                except:
 
-        save_name_cache(name_cache)
+                    pass
 
-        sys.exit(1)
+            # 追加成功的
 
-    print("Baostock 登录成功")
+            for rec in success_records:
 
+                if rec["code"] not in done_codes:
 
+                    results.append(rec)
 
-    stocks = []
+                    done_codes.add(rec["code"])
 
+            # 写回
 
+            with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
 
-    if args.sectors:
+                json.dump(results, f, ensure_ascii=False)
 
-        sector_list = [s.strip() for s in args.sectors.split(',')]
+            print(f"✅ 补跑成功 {len(success_records)} 只，已写入 snapshot")
 
-        print(f"筛选板块: {sector_list}")
+        if still_failed:
 
-        filtered_codes = []
+            save_failed(still_failed)
 
-        if os.path.exists(SNAPSHOT_FILE):
-
-            try:
-
-                with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
-
-                    existing = json.load(f)
-
-                for item in existing:
-
-                    if item.get("industry") in sector_list:
-
-                        filtered_codes.append(item["code"])
-
-                print(f"底库中找到 {len(filtered_codes)} 只属于选中板块的股票")
-
-            except Exception as e:
-
-                print(f"读取底库失败: {e}")
-
-        if filtered_codes:
-
-            stocks = filtered_codes
+            print(f"⚠️ 仍有 {len(still_failed)} 只补跑失败，保留在 failed_stocks.json")
 
         else:
 
-            print("⚠️ 底库中没找到匹配股票，将全量拉取建库")
+            # 全部补回，删掉 failed 文件
 
-            stocks = get_all_a_stocks()
+            if os.path.exists(FAILED_FILE):
 
-            if not stocks:
+                os.remove(FAILED_FILE)
 
-                print("akshare 失败，尝试 baostock...")
+                print(f"✅ failed_stocks.json 已清空")
 
-                try:
-
-                    rs = bs.query_stock_basic()
-
-                    while rs.error_code == '0' and rs.next():
-
-                        row = rs.get_row_data()
-
-                        if row[0].startswith(('sh.6', 'sz.0', 'sz.3')):
-
-                            stocks.append(row[0])
-
-                    print(f"从 baostock 获取 {len(stocks)} 只")
-
-                except Exception as e:
-
-                    print(f"baostock 也失败: {e}")
-
-    else:
-
-        stocks = load_stocks_from_txt()
-
-        if not stocks:
-
-            print("stocks.txt 为空，自动拉取全市场 A 股列表...")
-
-            stocks = get_all_a_stocks()
-
-            if not stocks:
-
-                print("akshare 失败，尝试 baostock...")
-
-                try:
-
-                    rs = bs.query_stock_basic()
-
-                    while rs.error_code == '0' and rs.next():
-
-                        row = rs.get_row_data()
-
-                        if row[0].startswith(('sh.6', 'sz.0', 'sz.3')):
-
-                            stocks.append(row[0])
-
-                    print(f"从 baostock 获取 {len(stocks)} 只")
-
-                except Exception as e:
-
-                    print(f"baostock 也失败: {e}")
+        print()
 
 
 
-    if not stocks:
+    # ===== 加载缓存 =====
 
-        print("所有数据源都失败，写空结果并退出")
+    name_cache = load_name_cache()
 
-        save_snapshot([])
+    fund_cache = load_fund_cache()
 
-        save_tech_detail([])
+    print(f"📛 名称缓存: {len(name_cache)} 条")
 
-        bs.logout()
+    print(f"💰 基本面缓存: {len(fund_cache)} 条")
 
-        save_fund_cache(fund_cache)
+
+
+    # ===== 获取股票列表 =====
+
+    rs = bs.query_all_stock(day=today)
+
+    if rs.error_code != '0':
+
+        print(f"❌ 获取股票列表失败: {rs.error_msg}")
+
+        bs_logout()
+
+        return
+
+
+
+    stock_list = []
+
+    while rs.next():
+
+        row = rs.get_row_data()
+
+        if row and len(row) > 0:
+
+            stock_list.append(row[0])
+
+
+
+    if not stock_list:
+
+        print("⚠️ 股票列表为空（可能非交易日），优雅退出，保留已有数据")
 
         save_name_cache(name_cache)
 
-        sys.exit(1)
+        save_fund_cache(fund_cache)
+
+        bs_logout()
+
+        return
 
 
 
-    print(f"股票池共 {len(stocks)} 只")
+    print(f"📋 共 {len(stock_list)} 只证券")
 
 
 
-    # 断点续跑：只保留完整记录
+    # ===== 读已有 snapshot 用于断点续跑 =====
 
-    existing_results = {}
+    results = []
+
+    done_codes = set()
 
     if os.path.exists(SNAPSHOT_FILE):
 
@@ -1102,245 +1426,617 @@ def main():
 
             with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
 
-                for item in json.load(f):
+                results = json.load(f)
 
-                    if "code" in item and "tech_total" in item:
+            for item in results:
 
-                        existing_results[item["code"]] = item
+                done_codes.add(item.get("code"))
 
-            print(f"已加载已有快照 {len(existing_results)} 条（断点续跑，已过滤不完整记录）")
+            print(f"📦 已有底库: {len(results)} 只，跳过已完成的")
 
-        except Exception as e:
+        except:
 
-            print(f"读取快照失败，将全量重跑: {e}")
+            pass
 
-            existing_results = {}
 
 
+    # 过滤掉已完成的
 
-    # 修复旧记录中 name 是代码的问题
+    todo = [c for c in stock_list if c not in done_codes]
 
-    for item in existing_results.values():
+    print(f"🆕 待处理: {len(todo)} 只")
 
-        if item.get("name") and item["name"].startswith(("sh.", "sz.")):
 
-            cached_name = name_cache.get(item["code"])
 
-            if cached_name and not cached_name.startswith(("sh.", "sz.")):
+    # ===== 遍历建库 =====
 
-                item["name"] = cached_name
+    failed_list = []
 
-                print(f"  🔧 修复旧记录名称: {item['code']} → {cached_name}")
+    start_time = time.time()
 
+    total = len(todo)
 
 
-    results = list(existing_results.values())
 
-    done_codes = set(existing_results.keys())
+    for i, code in enumerate(todo):
 
-    success = len(done_codes)
+        record = build_stock_record(code, name_cache, fund_cache, today)
 
-    fail = 0
+        if record and record.get("price", 0) > 0:
 
-
-
-    for i, code in enumerate(stocks):
-
-        if code in done_codes:
-
-            continue
-
-        try:
-
-            if (i + 1) % 50 == 0:
-
-                print(f"  进度: {i+1}/{len(stocks)} (已完成 {success}, 失败 {fail})")
-
-            tech = get_tech_analysis(code)
-
-            fund = get_fundamental_analysis(code, fund_cache)
-
-
-
-            # ===== 名称获取（优先缓存）=====
-
-            stock_name = name_cache.get(code)
-
-            if not stock_name or stock_name == code or stock_name.startswith(("sh.", "sz.")):
-
-                try:
-
-                    rs = bs.query_stock_basic(code=code)
-
-                    if rs.error_code == '0' and rs.next():
-
-                        row = rs.get_row_data()
-
-                        fetched = row[1] if len(row) > 1 and row[1] else None
-
-                        if fetched and not fetched.startswith(("sh.", "sz.")):
-
-                            stock_name = fetched
-
-                            name_cache[code] = fetched
-
-                        else:
-
-                            stock_name = code.split('.')[-1]
-
-                            name_cache[code] = stock_name
-
-                    else:
-
-                        stock_name = code.split('.')[-1]
-
-                except:
-
-                    stock_name = code.split('.')[-1]
-
-            # ===== 名称获取结束 =====
-
-
-
-            current_price = 0
-
-            cached_k = get_cached_kline(code)
-
-            if cached_k:
-
-                current_price = cached_k[-1]['close']
-
-            industry = CODE_INDUSTRY.get(code, CODE_INDUSTRY.get(code[3:] if '.' in code else code, "未分类"))
-
-
-
-            # 评分硬封顶
-
-            tech_total = min(tech["tech_total"], TECH_MAX)
-
-            fund_total = min(fund["fund_total"], FUND_MAX)
-
-            total_score = min(tech_total + fund_total, TOTAL_MAX)
-
-
-
-            result = {
-
-                "code": code,
-
-                "name": stock_name,
-
-                "price": current_price,
-
-                "industry": industry,
-
-                "ma_bull": tech["ma_bull"],
-
-                "macd_gold": tech["macd_gold"],
-
-                "kdj_gold": tech["kdj_gold"],
-
-                "vol_breakout": tech["vol_breakout"],
-
-                "ma_score": tech["ma_score"],
-
-                "macd_score": tech["macd_score"],
-
-                "kdj_score": tech["kdj_score"],
-
-                "vol_score": tech["vol_score"],
-
-                "tech_total": tech_total,
-
-                "roe": fund["roe"],
-
-                "pe": fund["pe"],
-
-                "pb": fund["pb"],
-
-                "roe_score": fund["roe_score"],
-
-                "pe_score": fund["pe_score"],
-
-                "pb_score": fund["pb_score"],
-
-                "fund_total": fund_total,
-
-                "total_score": round(total_score, 2),
-
-                "tech_detail": tech["detail"],
-
-                "fund_detail": fund["detail"],
-
-            }
-
-            results.append(result)
+            results.append(record)
 
             done_codes.add(code)
 
-            success += 1
+            if (i + 1) % 200 == 0:
 
-            if success % 100 == 0:
+                print(f"  ✅ {i+1}/{total} 完成")
 
-                save_snapshot(results)
+        else:
 
-                save_fund_cache(fund_cache)
+            reason = "no_data"
 
-                save_name_cache(name_cache)
+            if record is None:
 
-        except Exception as e:
+                reason = "name_failed"
 
-            fail += 1
+            elif record.get("price", 0) <= 0:
 
-            if fail <= 5:
+                reason = "price_zero"
 
-                print(f"  {code} 处理失败: {e}")
+            failed_list.append({"code": code, "reason": reason})
 
 
 
-    save_snapshot(results)
+        time.sleep(BATCH_PAUSE)
 
-    save_fund_cache(fund_cache)
+
+
+        # 每500只保存一次
+
+        if (i + 1) % 500 == 0:
+
+            with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+
+                json.dump(results, f, ensure_ascii=False)
+
+            save_name_cache(name_cache)
+
+            save_fund_cache(fund_cache)
+
+
+
+    # ===== 最终写入 =====
+
+    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+
+        json.dump(results, f, ensure_ascii=False)
 
     save_name_cache(name_cache)
 
-    save_tech_detail(results)
-
-    bs.logout()
+    save_fund_cache(fund_cache)
 
 
 
-    # 行业分布统计
+    elapsed = time.time() - start_time
 
-    industry_count = {}
+    print(f"\n🎉 全量建库完成!")
 
-    for r in results:
+    print(f"   ✅ 成功: {len(results)} 只")
 
-        ind = r.get("industry", "未分类")
+    print(f"   ❌ 失败: {len(failed_list)} 只")
 
-        industry_count[ind] = industry_count.get(ind, 0) + 1
-
-    print("\n行业分布统计:")
-
-    for ind, cnt in sorted(industry_count.items(), key=lambda x: x[1], reverse=True)[:10]:
-
-        print(f"  {ind}: {cnt} 只")
+    print(f"   ⏱️ 耗时: {elapsed:.0f}s ({elapsed/60:.1f}min)")
 
 
 
-    print("\n" + "=" * 60)
+    if failed_list:
 
-    print(f"完成! 成功: {success}, 失败: {fail}, 总计: {len(results)}")
+        with open(FAILED_FILE, "w", encoding="utf-8") as f:
 
-    print(f"名称缓存: {len(name_cache)} 条")
+            json.dump(failed_list, f, ensure_ascii=False, indent=2)
 
-    print(f"结果已保存: {SNAPSHOT_FILE}")
-
-    print("=" * 60)
+        print(f"   📝 失败列表已写入 {FAILED_FILE}")
 
 
+
+    bs_logout()
+
+
+
+
+
+# ========= 每日增量更新 =========
+
+def daily_update(stale_days=DEFAULT_STALE_DAYS):
+
+    bs_login()
+
+    today = get_last_trade_date()
+
+    print(f"📅 交易日基准: {today}")
+
+
+
+    # ===== 顺带补跑 failed（每天消化5只）=====
+
+    failed = load_failed()
+
+    if failed:
+
+        print(f"🔄 顺带补跑 failed（最多{DAILY_RETRY_BATCH}只）...")
+
+        items = list(failed.items())[:DAILY_RETRY_BATCH]
+
+        snapshot = []
+
+        if os.path.exists(SNAPSHOT_FILE):
+
+            try:
+
+                with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+
+                    snapshot = json.load(f)
+
+            except:
+
+                pass
+
+        done_codes = {item["code"] for item in snapshot if "code" in item}
+
+        added = 0
+
+        for code, reason in items:
+
+            print(f"  补跑 {code}...", end="")
+
+            try:
+
+                name_cache = load_name_cache()
+
+                fund_cache = load_fund_cache()
+
+                record = build_stock_record(code, name_cache, fund_cache, today)
+
+                if record and record.get("price", 0) > 0:
+
+                    snapshot.append(record)
+
+                    del failed[code]
+
+                    added += 1
+
+                    print(f" ✅")
+
+                else:
+
+                    print(f" ❌")
+
+            except Exception as e:
+
+                print(f" ❌ {e}")
+
+            time.sleep(BATCH_PAUSE)
+
+        if added > 0:
+
+            with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+
+                json.dump(snapshot, f, ensure_ascii=False)
+
+            print(f"  ✅ 补回 {added} 只进底库")
+
+        save_failed(failed)
+
+        print()
+
+
+
+    # ===== 主流程：更新已有 snapshot =====
+
+    if not os.path.exists(SNAPSHOT_FILE):
+
+        print("❌ 底库不存在，请先全量建库")
+
+        bs_logout()
+
+        return
+
+
+
+    with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+
+        snapshot = json.load(f)
+
+
+
+    print(f"📦 底库共 {len(snapshot)} 只")
+
+
+
+    updated = 0
+
+    skipped = 0
+
+    stale_list = []
+
+
+
+    for item in snapshot:
+
+        code = item.get("code")
+
+        if not code:
+
+            continue
+
+
+
+        last_date = item.get("last_date", "")
+
+        missing = count_missing_days(last_date, today)
+
+
+
+        # 判断是否需要更新
+
+        need_update = False
+
+        if missing < 0:
+
+            need_update = True
+
+        elif missing >= stale_days:
+
+            need_update = True
+
+            stale_list.append(code)
+
+
+
+        if not need_update:
+
+            skipped += 1
+
+            continue
+
+
+
+        # 增量拉取
+
+        start_str = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=KLINE_DAYS)).strftime("%Y-%m-%d")
+
+        fresh = fetch_kline_incremental(code, start_str, today)
+
+
+
+        if fresh and len(fresh) > 0:
+
+            # 更新 kline 缓存
+
+            cached = get_cached_kline(code)
+
+            merged = merge_kline(cached, fresh) if cached else fresh
+
+            save_cached_kline(code, merged)
+
+
+
+            # 更新 tech
+
+            tech = calc_tech_analysis(code)
+
+            item["ma_bull"] = tech["ma_bull"]
+
+            item["macd_gold"] = tech["macd_gold"]
+
+            item["kdj_gold"] = tech["kdj_gold"]
+
+            item["vol_breakout"] = tech["vol_breakout"]
+
+            item["tech_score"] = tech["tech_total"]
+
+            item["tech_detail"] = tech["tech_detail"]
+
+
+
+            # 更新价格
+
+            if merged and len(merged) > 0:
+
+                item["price"] = merged[-1].get("close", item.get("price", 0))
+
+
+
+            item["last_date"] = today
+
+            item["missing_days"] = 0
+
+            item["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            updated += 1
+
+        else:
+
+            item["missing_days"] = missing
+
+            skipped += 1
+
+
+
+        time.sleep(BATCH_PAUSE)
+
+
+
+    # 写回
+
+    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+
+        json.dump(snapshot, f, ensure_ascii=False)
+
+
+
+    print(f"\n📊 每日更新完成:")
+
+    print(f"   ✅ 更新: {updated} 只")
+
+    print(f"   ⏭️ 跳过: {skipped} 只")
+
+    if stale_list:
+
+        print(f"   ⚠️ 超期未更新: {len(stale_list)} 只")
+
+
+
+    bs_logout()
+
+
+
+
+
+# ========= 强制刷新超期 =========
+
+def force_refresh_stale(stale_days=DEFAULT_STALE_DAYS):
+
+    bs_login()
+
+    today = get_last_trade_date()
+
+    print(f"📅 交易日基准: {today}")
+
+
+
+    if not os.path.exists(SNAPSHOT_FILE):
+
+        print("❌ 底库不存在")
+
+        bs_logout()
+
+        return
+
+
+
+    with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+
+        snapshot = json.load(f)
+
+
+
+    stale_items = [item for item in snapshot if count_missing_days(item.get("last_date", ""), today) >= stale_days]
+
+    print(f"🔍 超期 {stale_days}+ 天: {len(stale_items)} 只")
+
+
+
+    if not stale_items:
+
+        print("✅ 没有需要强制刷新的")
+
+        bs_logout()
+
+        return
+
+
+
+    name_cache = load_name_cache()
+
+    fund_cache = load_fund_cache()
+
+    refreshed = 0
+
+    still_failed = []
+
+
+
+    for item in stale_items:
+
+        code = item.get("code")
+
+        if not code:
+
+            continue
+
+        print(f"  刷新 {code}...", end="")
+
+        record = build_stock_record(code, name_cache, fund_cache, today)
+
+        if record and record.get("price", 0) > 0:
+
+            # 更新 snapshot 中对应项
+
+            for idx, s in enumerate(snapshot):
+
+                if s.get("code") == code:
+
+                    snapshot[idx] = record
+
+                    break
+
+            refreshed += 1
+
+            print(f" ✅")
+
+        else:
+
+            still_failed.append({"code": code, "reason": "refresh_failed"})
+
+            print(f" ❌")
+
+
+
+        time.sleep(BATCH_PAUSE)
+
+
+
+    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+
+        json.dump(snapshot, f, ensure_ascii=False)
+
+    save_name_cache(name_cache)
+
+    save_fund_cache(fund_cache)
+
+
+
+    if still_failed:
+
+        # 合并进 failed_stocks.json
+
+        existing = load_failed()
+
+        for item in still_failed:
+
+            existing[item["code"]] = item["reason"]
+
+        save_failed(existing)
+
+        print(f"⚠️ {len(still_failed)} 只刷新失败，已写入 failed_stocks.json")
+
+
+
+    print(f"\n🎉 强制刷新完成: {refreshed}/{len(stale_items)} 成功")
+
+    bs_logout()
+
+
+
+
+
+# ========= 指定代码更新 =========
+
+def update_by_codes(codes):
+
+    bs_login()
+
+    today = get_last_trade_date()
+
+    name_cache = load_name_cache()
+
+    fund_cache = load_fund_cache()
+
+
+
+    if os.path.exists(SNAPSHOT_FILE):
+
+        with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+
+            snapshot = json.load(f)
+
+    else:
+
+        snapshot = []
+
+
+
+    done_codes = {item["code"] for item in snapshot if "code" in item}
+
+
+
+    for code in codes:
+
+        code = normalize_code(code)
+
+        print(f"处理 {code}...", end="")
+
+        record = build_stock_record(code, name_cache, fund_cache, today)
+
+        if record and record.get("price", 0) > 0:
+
+            if code in done_codes:
+
+                for idx, s in enumerate(snapshot):
+
+                    if s.get("code") == code:
+
+                        snapshot[idx] = record
+
+                        break
+
+            else:
+
+                snapshot.append(record)
+
+                done_codes.add(code)
+
+            print(f" ✅")
+
+        else:
+
+            print(f" ❌")
+
+
+
+        time.sleep(BATCH_PAUSE)
+
+
+
+    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+
+        json.dump(snapshot, f, ensure_ascii=False)
+
+    save_name_cache(name_cache)
+
+    save_fund_cache(fund_cache)
+
+    print(f"🎉 完成")
+
+    bs_logout()
+
+
+
+
+
+# ========= 主入口 =========
 
 if __name__ == "__main__":
 
-    main()
+    parser = argparse.ArgumentParser(description="astock-screener engine v7.4")
+
+    parser.add_argument("--daily", action="store_true", help="每日增量更新")
+
+    parser.add_argument("--force-refresh-stale", action="store_true", help="强制刷新超期")
+
+    parser.add_argument("--stale-days", type=int, default=DEFAULT_STALE_DAYS, help="超期阈值")
+
+    parser.add_argument("--codes", nargs="+", help="指定代码更新")
+
+    args = parser.parse_args()
+
+
+
+    if args.codes:
+
+        update_by_codes(args.codes)
+
+    elif args.force_refresh_stale:
+
+        force_refresh_stale(args.stale_days)
+
+    elif args.daily:
+
+        daily_update(args.stale_days)
+
+    else:
+
+        main_full_build()
 
