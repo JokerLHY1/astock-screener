@@ -18,6 +18,8 @@ astock-screener engine v7.4
 
   - daily_update() 每天顺带补跑5只 failed（兜底消化）
 
+  - update_by_codes(): 增量补K线 + 拉取失败/数据不完整明确反馈（不删缓存全量重拉）
+
 """
 
 
@@ -154,6 +156,42 @@ def count_missing_days(last_date_str, today_str):
 
 
 
+def estimate_trade_days(start_str, end_str):
+
+    """粗估 start~end 之间的交易日数量（跳过周末）"""
+
+    try:
+
+        s = datetime.strptime(start_str, "%Y-%m-%d")
+
+        e = datetime.strptime(end_str, "%Y-%m-%d")
+
+    except Exception:
+
+        return None
+
+    if e < s:
+
+        return 0
+
+    n = 0
+
+    d = s
+
+    while d <= e:
+
+        if d.weekday() < 5:
+
+            n += 1
+
+        d += timedelta(days=1)
+
+    return n
+
+
+
+
+
 # ========= baostock =========
 
 def bs_login():
@@ -172,7 +210,13 @@ def bs_login():
 
 def bs_logout():
 
-    bs.logout()
+    try:
+
+        bs.logout()
+
+    except Exception:
+
+        pass
 
 
 
@@ -530,13 +574,65 @@ def is_kline_cache_fresh(kline, max_days=5):
 
 def merge_kline(old, new):
 
-    merged = {d['date']: d for d in old}
+    merged = {d['date']: d for d in old if d.get("date")}
 
     for d in new:
 
-        merged[d['date']] = d
+        if d.get("date"):
+
+            merged[d['date']] = d
 
     return sorted(merged.values(), key=lambda x: x['date'])
+
+
+
+
+
+def realign_kline(kline):
+
+    """合并后排序去重，close为0时前向填充"""
+
+    if not kline:
+
+        return kline
+
+    kline = sorted([d for d in kline if d.get("date")], key=lambda x: x["date"])
+
+    seen = {}
+
+    for d in kline:
+
+        seen[d["date"]] = d
+
+    out = list(seen.values())
+
+    prev_close = None
+
+    for d in out:
+
+        c = d.get("close")
+
+        if c in (None, 0) and prev_close not in (None, 0):
+
+            d["close"] = prev_close
+
+            if d.get("open") in (None, 0):
+
+                d["open"] = prev_close
+
+            if d.get("high") in (None, 0):
+
+                d["high"] = prev_close
+
+            if d.get("low") in (None, 0):
+
+                d["low"] = prev_close
+
+        if d.get("close"):
+
+            prev_close = d["close"]
+
+    return out
 
 
 
@@ -944,10 +1040,6 @@ def calc_fund_analysis(code, today):
 
 
 
-        end_date = today
-
-        start_date = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=365)).strftime("%Y-%m-%d")
-
         rs = bs.query_profit_data(code=code, year=datetime.strptime(today, "%Y-%m-%d").year, quarter=4)
 
         roe_val = None
@@ -1022,7 +1114,7 @@ def calc_fund_analysis(code, today):
 
 
 
-        rs = bs.query_valuation(code=code, start_date=end_date, end_date=end_date)
+        rs = bs.query_valuation(code=code, start_date=today, end_date=today)
 
         pe_val, pb_val = None, None
 
@@ -1174,8 +1266,6 @@ def build_stock_record(code, name_cache, fund_cache, today):
 
 
 
-    # 获取最新价格
-
     price = 0
 
     kline_data = get_cached_kline(code)
@@ -1185,8 +1275,6 @@ def build_stock_record(code, name_cache, fund_cache, today):
         price = kline_data[-1].get("close", 0)
 
 
-
-    # 如果 kline 没拿到，尝试从 valuation 拿
 
     if price == 0:
 
@@ -1217,8 +1305,6 @@ def build_stock_record(code, name_cache, fund_cache, today):
             pass
 
 
-
-    # 行业
 
     industry = get_industry(code)
 
@@ -1282,8 +1368,6 @@ def main_full_build():
 
 
 
-    # ===== 自动补跑 failed_stocks.json =====
-
     failed = load_failed()
 
     if failed:
@@ -1297,8 +1381,6 @@ def main_full_build():
         )
 
         if success_records:
-
-            # 读已有 snapshot
 
             results = []
 
@@ -1320,8 +1402,6 @@ def main_full_build():
 
                     pass
 
-            # 追加成功的
-
             for rec in success_records:
 
                 if rec["code"] not in done_codes:
@@ -1329,8 +1409,6 @@ def main_full_build():
                     results.append(rec)
 
                     done_codes.add(rec["code"])
-
-            # 写回
 
             with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
 
@@ -1346,8 +1424,6 @@ def main_full_build():
 
         else:
 
-            # 全部补回，删掉 failed 文件
-
             if os.path.exists(FAILED_FILE):
 
                 os.remove(FAILED_FILE)
@@ -1358,8 +1434,6 @@ def main_full_build():
 
 
 
-    # ===== 加载缓存 =====
-
     name_cache = load_name_cache()
 
     fund_cache = load_fund_cache()
@@ -1369,8 +1443,6 @@ def main_full_build():
     print(f"💰 基本面缓存: {len(fund_cache)} 条")
 
 
-
-    # ===== 获取股票列表 =====
 
     rs = bs.query_all_stock(day=today)
 
@@ -1414,8 +1486,6 @@ def main_full_build():
 
 
 
-    # ===== 读已有 snapshot 用于断点续跑 =====
-
     results = []
 
     done_codes = set()
@@ -1440,15 +1510,11 @@ def main_full_build():
 
 
 
-    # 过滤掉已完成的
-
     todo = [c for c in stock_list if c not in done_codes]
 
     print(f"🆕 待处理: {len(todo)} 只")
 
 
-
-    # ===== 遍历建库 =====
 
     failed_list = []
 
@@ -1492,8 +1558,6 @@ def main_full_build():
 
 
 
-        # 每500只保存一次
-
         if (i + 1) % 500 == 0:
 
             with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
@@ -1505,8 +1569,6 @@ def main_full_build():
             save_fund_cache(fund_cache)
 
 
-
-    # ===== 最终写入 =====
 
     with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
 
@@ -1557,8 +1619,6 @@ def daily_update(stale_days=DEFAULT_STALE_DAYS):
     print(f"📅 交易日基准: {today}")
 
 
-
-    # ===== 顺带补跑 failed（每天消化5只）=====
 
     failed = load_failed()
 
@@ -1632,8 +1692,6 @@ def daily_update(stale_days=DEFAULT_STALE_DAYS):
 
 
 
-    # ===== 主流程：更新已有 snapshot =====
-
     if not os.path.exists(SNAPSHOT_FILE):
 
         print("❌ 底库不存在，请先全量建库")
@@ -1678,8 +1736,6 @@ def daily_update(stale_days=DEFAULT_STALE_DAYS):
 
 
 
-        # 判断是否需要更新
-
         need_update = False
 
         if missing < 0:
@@ -1702,8 +1758,6 @@ def daily_update(stale_days=DEFAULT_STALE_DAYS):
 
 
 
-        # 增量拉取
-
         start_str = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=KLINE_DAYS)).strftime("%Y-%m-%d")
 
         fresh = fetch_kline_incremental(code, start_str, today)
@@ -1712,17 +1766,15 @@ def daily_update(stale_days=DEFAULT_STALE_DAYS):
 
         if fresh and len(fresh) > 0:
 
-            # 更新 kline 缓存
-
             cached = get_cached_kline(code)
 
             merged = merge_kline(cached, fresh) if cached else fresh
 
+            merged = realign_kline(merged)
+
             save_cached_kline(code, merged)
 
 
-
-            # 更新 tech
 
             tech = calc_tech_analysis(code)
 
@@ -1739,8 +1791,6 @@ def daily_update(stale_days=DEFAULT_STALE_DAYS):
             item["tech_detail"] = tech["tech_detail"]
 
 
-
-            # 更新价格
 
             if merged and len(merged) > 0:
 
@@ -1767,8 +1817,6 @@ def daily_update(stale_days=DEFAULT_STALE_DAYS):
         time.sleep(BATCH_PAUSE)
 
 
-
-    # 写回
 
     with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
 
@@ -1862,8 +1910,6 @@ def force_refresh_stale(stale_days=DEFAULT_STALE_DAYS):
 
         if record and record.get("price", 0) > 0:
 
-            # 更新 snapshot 中对应项
-
             for idx, s in enumerate(snapshot):
 
                 if s.get("code") == code:
@@ -1900,8 +1946,6 @@ def force_refresh_stale(stale_days=DEFAULT_STALE_DAYS):
 
     if still_failed:
 
-        # 合并进 failed_stocks.json
-
         existing = load_failed()
 
         for item in still_failed:
@@ -1922,9 +1966,9 @@ def force_refresh_stale(stale_days=DEFAULT_STALE_DAYS):
 
 
 
-# ========= 指定代码更新 =========
+# ========= 指定代码更新（增量 + 明确反馈） =========
 
-def update_by_codes(codes):
+def update_by_codes(codes, force_refresh=False):
 
     bs_login()
 
@@ -1952,11 +1996,75 @@ def update_by_codes(codes):
 
 
 
-    for code in codes:
+    stats = {"success": [], "warn": [], "fail": []}
 
-        code = normalize_code(code)
+
+
+    window_start = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=KLINE_DAYS)).strftime("%Y-%m-%d")
+
+    expected_trade_days = estimate_trade_days(window_start, today)
+
+
+
+    for raw_code in codes:
+
+        code = normalize_code(raw_code)
 
         print(f"处理 {code}...", end="")
+
+
+
+        # 1) 增量补K线：只补缺失区间，不删缓存全量重拉
+
+        fresh = fetch_kline_incremental(code, window_start, today)
+
+
+
+        if not fresh:
+
+            # 拉取失败：不能拿旧数据冒充更新成功
+
+            print(f" ❌ 增量K线拉取失败/为空，跳过写入")
+
+            stats["fail"].append({"code": code, "reason": "kline_fetch_empty"})
+
+            time.sleep(BATCH_PAUSE)
+
+            continue
+
+
+
+        cached = get_cached_kline(code)
+
+        merged = merge_kline(cached, fresh) if cached else fresh
+
+        merged = realign_kline(merged)
+
+        save_cached_kline(code, merged)
+
+
+
+        # 2) 数据完整性校验
+
+        warn_flag = False
+
+        if merged and merged[-1].get("date") != today:
+
+            print(f" ⚠️ 最新K线日期={merged[-1].get('date')}≠{today}", end="")
+
+            warn_flag = True
+
+
+
+        if expected_trade_days and len(merged) < expected_trade_days * 0.7:
+
+            print(f" ⚠️ K线天数偏少(预期~{expected_trade_days}天，实际{len(merged)}根)", end="")
+
+            warn_flag = True
+
+
+
+        # 3) 用更新后的缓存重算技术指标
 
         record = build_stock_record(code, name_cache, fund_cache, today)
 
@@ -1978,11 +2086,25 @@ def update_by_codes(codes):
 
                 done_codes.add(code)
 
-            print(f" ✅")
+
+
+            if warn_flag:
+
+                print(f" ✅(有告警)")
+
+                stats["warn"].append({"code": code, "reason": "data_incomplete"})
+
+            else:
+
+                print(f" ✅")
+
+                stats["success"].append(code)
 
         else:
 
-            print(f" ❌")
+            print(f" ❌ 构建记录失败(价格=0)")
+
+            stats["fail"].append({"code": code, "reason": "build_failed"})
 
 
 
@@ -1997,6 +2119,32 @@ def update_by_codes(codes):
     save_name_cache(name_cache)
 
     save_fund_cache(fund_cache)
+
+
+
+    # 4) 汇总输出
+
+    print(f"\n{'='*50}")
+
+    print(f"📊 更新汇总:")
+
+    print(f"   ✅ 成功: {len(stats['success'])} 只")
+
+    print(f"   ⚠️ 告警: {len(stats['warn'])} 只")
+
+    print(f"   ❌ 失败: {len(stats['fail'])} 只")
+
+    if stats["fail"]:
+
+        print(f"   失败详情:")
+
+        for f in stats["fail"]:
+
+            print(f"     {f['code']}: {f['reason']}")
+
+    print(f"{'='*50}")
+
+
 
     print(f"🎉 完成")
 
@@ -2026,7 +2174,7 @@ if __name__ == "__main__":
 
     if args.codes:
 
-        update_by_codes(args.codes)
+        update_by_codes(args.codes, force_refresh=True)
 
     elif args.force_refresh_stale:
 

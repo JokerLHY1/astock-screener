@@ -10,6 +10,24 @@ on:
         description: '板块名称（逗号分隔，如：电子,医药生物，留空则全量）'
         required: false
         default: ''
+      codes:
+        description: '指定股票代码（逗号分隔，如 sh.600000,sz.000001，留空则走板块/全量逻辑）'
+        required: false
+        default: ''
+      mode:
+        description: '更新模式（有codes时自动走指定代码更新，无codes时此参数生效）'
+        required: false
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - full
+          - force-refresh-stale
+      stale_days:
+        description: '超期阈值(天)'
+        required: false
+        default: '7'
+        type: string
   schedule:
     - cron: '0 10 * * 1-5'
 
@@ -31,12 +49,34 @@ jobs:
         run: |
           pip install baostock akshare
 
-      - name: Run engine
+      - name: Run engine (指定代码更新)
+        if: ${{ github.event.inputs.codes != '' }}
         run: |
-          if [ -n "${{ github.event.inputs.sectors }}" ]; then
-            python engine.py --sectors "${{ github.event.inputs.sectors }}"
-          else
+          echo "🔄 指定代码更新模式"
+          echo "📋 代码: ${{ github.event.inputs.codes }}"
+          CODES=$(echo "${{ github.event.inputs.codes }}" | tr ',' ' ')
+          python engine.py --codes $CODES
+
+      - name: Run engine (板块更新)
+        if: ${{ github.event.inputs.codes == '' && github.event.inputs.sectors != '' }}
+        run: |
+          python engine.py --sectors "${{ github.event.inputs.sectors }}"
+
+      - name: Run engine (每日增量/全量)
+        if: ${{ github.event.inputs.codes == '' && github.event.inputs.sectors == '' }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "⏰ 定时触发 → 每日增量更新"
+            python engine.py --daily --stale-days 7
+          elif [ "${{ github.event.inputs.mode }}" = "full" ]; then
+            echo "🏗️ 手动触发 → 全量建库"
             python engine.py
+          elif [ "${{ github.event.inputs.mode }}" = "force-refresh-stale" ]; then
+            echo "🔧 手动触发 → 强制刷新超期"
+            python engine.py --force-refresh-stale --stale-days ${{ github.event.inputs.stale_days }}
+          else
+            echo "📅 手动触发 → 每日增量更新"
+            python engine.py --daily --stale-days ${{ github.event.inputs.stale_days }}
           fi
 
       - name: Commit and push results
@@ -47,6 +87,10 @@ jobs:
           mkdir -p data
           [ -f data/snapshot.json ] && git add data/snapshot.json
           [ -f data/name_cache.json ] && git add data/name_cache.json
+          [ -f data/fund_cache.json ] && git add data/fund_cache.json
+          [ -f data/failed_stocks.json ] && git add data/failed_stocks.json
+          # 增量更新可能改了 history 里的K线缓存
+          [ -d data/history ] && git add data/history/
 
           if ! git diff --staged --quiet; then
             git commit -m "chore: update stock data $(date +'%Y-%m-%d')"

@@ -218,3 +218,95 @@ tr:hover td { background: #263548; }
   th, td { padding: 6px 8px; }
   .modal-content { padding: 16px; width: 95%; }
 }
+
+/* ============ 个股搜索（暗色主题适配） ============ */
+.stock-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 280px;
+}
+.stock-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  font-size: 0.85em;
+  background: #0f172a;
+  color: #e2e8f0;
+  box-sizing: border-box;
+}
+.stock-search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+}
+.stock-search-input::placeholder {
+  color: #64748b;
+}
+.stock-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0 0 6px 6px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 100;
+  display: none;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.stock-search-results.open {
+  display: block;
+}
+.stock-search-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.85em;
+  color: #e2e8f0;
+}
+.stock-search-item:hover {
+  background: #263548;
+}
+.stock-search-item input[type=checkbox] {
+  margin-right: 4px;
+  accent-color: #3b82f6;
+  cursor: pointer;
+}
+.stock-code {
+  font-family: 'Courier New', monospace;
+  color: #64748b;
+  font-size: 0.9em;
+  min-width: 70px;
+}
+.stock-name {
+  font-weight: 500;
+  flex: 1;
+  color: #e2e8f0;
+}
+.stock-industry {
+  color: #475569;
+  font-size: 0.8em;
+}
+.search-empty {
+  padding: 12px;
+  color: #64748b;
+  text-align: center;
+  font-size: 0.85em;
+}
+.selected-stock-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.selected-count {
+  font-size: 0.75em;
+  color: #64748b;
+  margin-left: 4px;
+}
+
