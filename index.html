@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A股选股引擎</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>📊 A股选股引擎</h1>
+    <p class="subtitle">数据每日收盘后自动更新 · 不构成投资建议</p>
+
+    <div class="filters">
+      <!-- 个股搜索框 -->
+      <div class="filter-row">
+        <label>搜索个股</label>
+        <div class="stock-search-wrapper">
+          <input type="text" id="stockSearchInput" class="stock-search-input" placeholder="输入股票代码或名称搜索...">
+          <div id="stockSearchResults" class="stock-search-results"></div>
+        </div>
+        <div id="selectedStockTags" class="selected-stock-tags"></div>
+        <span id="selectedStockCount" class="selected-count">已选 0 只</span>
+      </div>
+
+      <div class="filter-row">
+        <label>行业（多选）</label>
+        <div class="excel-dropdown" id="industryDropdown">
+          <div class="dropdown-header">
+            <input type="text" id="industrySearch" class="dropdown-search" placeholder="搜索行业..." readonly>
+            <span class="dropdown-arrow">▾</span>
+          </div>
+          <div class="dropdown-tags" id="industryTags"></div>
+          <div class="dropdown-panel" id="industryPanel">
+            <div class="dropdown-filter">
+              <input type="text" id="industryFilter" placeholder="输入关键词过滤...">
+              <button type="button" id="industrySelectAll">全选</button>
+              <button type="button" id="industryClear">清空</button>
+            </div>
+            <div class="dropdown-options" id="industryOptions"></div>
+            <div class="dropdown-footer">
+              <span id="industryCount">已选 0</span>
+              <button type="button" id="industryConfirm">确定</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-row">
+        <label>股价范围</label>
+        <input type="number" id="price-min" placeholder="最低" step="0.01">
+        <span>~</span>
+        <input type="number" id="price-max" placeholder="最高" step="0.01">
+      </div>
+
+      <div class="filter-row">
+        <label>技术面</label>
+        <label><input type="checkbox" id="f-ma"> 5/20均线多头</label>
+        <label><input type="checkbox" id="f-macd"> MACD金叉</label>
+        <label><input type="checkbox" id="f-kdj"> KDJ金叉</label>
+        <label><input type="checkbox" id="f-vol"> 放量突破</label>
+      </div>
+
+      <div class="filter-row">
+        <label>评分权重</label>
+        <span>技术面</span>
+        <input type="number" id="w-tech" value="70" min="0" max="100" style="width:60px">%
+        <span>基本面</span>
+        <input type="number" id="w-fund" value="30" min="0" max="100" style="width:60px">%
+      </div>
+
+      <button id="btn-filter">筛选</button>
+      <button id="btn-reset">重置</button>
+
+      <!-- 更新数据按钮 -->
+      <div class="update-block">
+        <button id="btn-update" class="btn-update">
+          <span class="btn-text">🔄 更新数据</span>
+          <span class="btn-spinner hidden"></span>
+        </button>
+        <span class="update-hint">勾选个股=更新指定股票 · 选行业=更新该行业 · 不选=每日增量</span>
+      </div>
+    </div>
+
+    <div class="result-info">
+      <span id="result-count">加载中...</span>
+      <span class="hint">点击表头排序</span>
+    </div>
+
+    <table id="stock-table">
+      <thead>
+        <tr>
+          <th data-key="code">代码</th>
+          <th data-key="name">名称</th>
+          <th data-key="industry">行业</th>
+          <th data-key="price">股价</th>
+          <th data-key="score">综合分</th>
+          <th data-key="tech_total">技术面</th>
+          <th data-key="fund_total">基本面</th>
+          <th>详情</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div id="detail-modal" class="modal hidden">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <div id="detail-body"></div>
+      </div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

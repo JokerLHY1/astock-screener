@@ -1,0 +1,281 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
+.container { max-width: 1400px; margin: 0 auto; }
+h1 { font-size: 1.8em; margin-bottom: 4px; }
+.subtitle { color: #64748b; font-size: 0.85em; margin-bottom: 20px; }
+
+.filters { background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.filter-row { display: flex; flex-direction: column; gap: 4px; }
+.filter-row label { font-size: 0.8em; color: #94a3b8; }
+.filter-row select, .filter-row input[type="number"] { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 6px 8px; border-radius: 4px; }
+.filter-row input[type="checkbox"] { margin-right: 4px; }
+#btn-filter, #btn-reset { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em; }
+#btn-filter { background: #3b82f6; color: #fff; }
+#btn-reset { background: #475569; color: #e2e8f0; }
+
+/* ============ Excel 风格行业下拉 ============ */
+.excel-dropdown {
+  position: relative;
+  width: 260px;
+}
+.dropdown-header {
+  display: flex;
+  align-items: center;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 6px 8px;
+  cursor: pointer;
+  min-height: 34px;
+}
+.dropdown-header:hover { border-color: #475569; }
+.dropdown-search {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #e2e8f0;
+  font-size: 0.85em;
+  outline: none;
+  cursor: pointer;
+}
+.dropdown-search::placeholder { color: #64748b; }
+.dropdown-arrow { color: #64748b; font-size: 0.7em; margin-left: 4px; }
+.dropdown-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.tag {
+  background: #1e3a5f;
+  color: #7dd3fc;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.75em;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tag-x {
+  cursor: pointer;
+  color: #94a3b8;
+  font-weight: bold;
+}
+.tag-x:hover { color: #ef4444; }
+.dropdown-panel {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 100;
+  margin-top: 4px;
+  max-height: 320px;
+  overflow: hidden;
+  flex-direction: column;
+}
+.dropdown-panel.open { display: flex; }
+.dropdown-filter {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid #334155;
+}
+.dropdown-filter input {
+  flex: 1;
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+}
+.dropdown-filter button {
+  background: #334155;
+  border: none;
+  color: #94a3b8;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75em;
+}
+.dropdown-filter button:hover { background: #475569; color: #e2e8f0; }
+.dropdown-options {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+  max-height: 220px;
+}
+.ind-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 0.85em;
+  color: #e2e8f0;
+}
+.ind-option:hover { background: #263548; }
+.ind-option input[type="checkbox"] { accent-color: #3b82f6; }
+.dropdown-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-top: 1px solid #334155;
+}
+.dropdown-footer span { color: #64748b; font-size: 0.8em; }
+.dropdown-footer button {
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  padding: 4px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+.dropdown-footer button:hover { background: #2563eb; }
+
+/* ============ 更新数据按钮 ============ */
+.update-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: auto;
+  align-items: flex-end;
+}
+.btn-update {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #059669;
+  color: #fff;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 600;
+  transition: background 0.2s;
+  min-width: 140px;
+  justify-content: center;
+}
+.btn-update:hover:not(:disabled) { background: #047857; }
+.btn-update:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.btn-spinner.hidden { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.update-hint {
+  font-size: 0.7em;
+  color: #64748b;
+  text-align: right;
+}
+
+/* ============ 表格 ============ */
+.result-info { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.85em; color: #64748b; }
+table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #334155; font-size: 0.9em; }
+th { background: #0f172a; cursor: pointer; user-select: none; color: #94a3b8; }
+th:hover { color: #e2e8f0; }
+td { color: #e2e8f0; }
+tr:hover td { background: #263548; }
+.bool-yes { color: #22c55e; }
+.bool-no { color: #64748b; }
+.detail-btn { background: #3b82f6; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8em; }
+
+/* ============ 弹窗 ============ */
+.modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal.hidden { display: none; }
+.modal-content { background: #1e293b; padding: 24px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; position: relative; }
+.close { position: absolute; top: 12px; right: 16px; font-size: 1.5em; cursor: pointer; color: #94a3b8; }
+.close:hover { color: #e2e8f0; }
+.detail-section { margin-bottom: 16px; }
+.detail-section h3 { color: #3b82f6; margin-bottom: 8px; font-size: 1em; }
+.detail-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #334155; font-size: 0.9em; }
+.detail-item span:last-child { font-weight: 600; }
+
+/* ============ 个股搜索（暗色主题适配） ============ */
+.stock-search-wrapper {
+  position: relative;
+  display: inline-block;
+  width: 300px;
+}
+.stock-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  font-size: 0.85em;
+  background: #0f172a;
+  color: #e2e8f0;
+  box-sizing: border-box;
+}
+.stock-search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+}
+.stock-search-input::placeholder { color: #64748b; }
+.stock-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0 0 6px 6px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 100;
+  display: none;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.stock-search-results.open { display: block; }
+.stock-search-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.85em;
+  color: #e2e8f0;
+}
+.stock-search-item:hover { background: #263548; }
+.stock-search-item input[type=checkbox] { margin-right: 4px; accent-color: #3b82f6; cursor: pointer; }
+.stock-code {
+  font-family: 'Courier New', monospace;
+  color: #64748b;
+  font-size: 0.9em;
+  min-width: 70px;
+}
+.stock-name { font-weight: 500; flex: 1; color: #e2e8f0; }
+.stock-industry { color: #475569; font-size: 0.8em; }
+.search-empty { padding: 12px; color: #64748b; text-align: center; font-size: 0.85em; }
+.selected-stock-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.selected-count { font-size: 0.75em; color: #64748b; margin-left: 4px; }
+
+/* ============ 手机端适配 ============ */
+@media (max-width: 768px) {
+  body { padding: 12px; }
+  .filters { flex-direction: column; align-items: stretch; }
+  .filter-row { width: 100%; }
+  .excel-dropdown { width: 100%; }
+  .update-block { margin-left: 0; align-items: stretch; }
+  .btn-update { width: 100%; }
+  .update-hint { text-align: center; }
+  table { font-size: 0.8em; }
+  th, td { padding: 6px 8px; }
+  .modal-content { padding: 16px; width: 95%; }
+  .stock-search-wrapper { width: 100%; }
+}

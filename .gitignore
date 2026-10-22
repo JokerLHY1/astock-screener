@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 本地K线缓存（不入库，避免仓库无限膨胀）
+data/history/
+data/tech.json
+
+# 允许上传的结果/小缓存文件
+# data/snapshot.json 不忽略
+# data/name_cache.json 不忽略
+# data/fund_cache.json 不忽略（基本面结果缓存，入库便于增量复用，减少 API 调用）
+# data/failed_stocks.json 不忽略
+
+# 编辑器
+.vscode/
+.idea/
+
+# 临时文件
+*.log
+.DS_Store
