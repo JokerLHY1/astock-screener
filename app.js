@@ -196,13 +196,17 @@ function updateSelectedStockTags() {
 
 // ============ 评分 ============
 function calcScore(s) {
+  // 技术面/基本面引擎已各自输出 0~100(无需二次归一化)
+  // 综合分 = 技术面*权重% + 基本面*权重%, 总和恒为 100
   const wTech = num(document.getElementById('w-tech').value) || 70;
   const wFund = num(document.getElementById('w-fund').value) || 30;
-  const techRaw = num(s.tech_total);      // 对齐后引擎直接输出
-  const fundRaw = num(s.fund_total);
-  const techScore = (techRaw / 4) * 100 * (wTech / 100);
-  const fundScore = (fundRaw / 30) * 100 * (wFund / 100);
-  return Math.round((techScore + fundScore) * 10) / 10;
+  const techRaw = Math.max(0, Math.min(100, num(s.tech_total)));
+  const fundRaw = Math.max(0, Math.min(100, num(s.fund_total)));
+  const techScore = techRaw * (wTech / 100);
+  const fundScore = fundRaw * (wFund / 100);
+  const total = techScore + fundScore;
+  const denom = (wTech + wFund) || 100; // 权重可能不等于100, 按占比归一
+  return Math.round((total / denom * 100) * 10) / 10;
 }
 
 // ============ 表格渲染 ============
@@ -225,8 +229,8 @@ function renderTable() {
       <td>${esc(s.industry || '-')}</td>
       <td>${esc(price)}</td>
       <td><strong>${esc(s._score)}</strong></td>
-      <td>${esc(num(s.tech_total))}/4</td>
-      <td>${esc(num(s.fund_total))}</td>
+      <td>${esc(Math.round(num(s.tech_total)))}</td>
+      <td>${esc(Math.round(num(s.fund_total)))}</td>
       <td><button class="detail-btn" data-code="${esc(s.code)}">详情</button></td>
     </tr>`;
   }).join('');

@@ -21,3 +21,7 @@ data/tech.json
 # 临时文件
 *.log
 .DS_Store
+
+# 误操作产生的空文件
+/cd
+/git
