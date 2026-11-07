@@ -31,7 +31,8 @@ function num(v) {
 // ============ 数据加载 ============
 async function loadData() {
   try {
-    const res = await fetch('data/snapshot.json');
+    // 加时间戳强制绕过 CDN/浏览器缓存，保证更新后刷新即拿最新快照
+    const res = await fetch(`data/snapshot.json?t=${Date.now()}`);
     allData = await res.json();
     initIndustry();
     renderTable();
