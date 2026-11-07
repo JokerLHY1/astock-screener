@@ -751,11 +751,16 @@ def daily_update(bs, stale_days=DEFAULT_STALE_DAYS):
             item["tech_total"] = tech["tech_total"]
             item["tech_score"] = tech["tech_total"]
             item["tech_detail"] = tech["tech_detail"]
-            item["price"] = merged[-1].get("close", item.get("price", 0))
-            item["last_date"] = today
-            item["missing_days"] = 0
-            item["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            updated += 1
+            # 校验最新K线日期确为 today，避免盘中/数据未出时把昨收价标成当天
+            if merged and merged[-1].get("date") == today:
+                item["price"] = merged[-1].get("close", item.get("price", 0))
+                item["last_date"] = today
+                item["missing_days"] = 0
+                item["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                updated += 1
+            else:
+                item["missing_days"] = missing + 1
+                skipped += 1
         else:
             item["missing_days"] = missing
             skipped += 1
